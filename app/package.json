@@ -1,0 +1,38 @@
+{
+  "name": "yxc-remote",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:tauri": "node --test e2e-tauri/*.test.mjs",
+    "showcase": "playwright test -c playwright.showcase.config.ts && ffmpeg -y -loglevel error -i $(ls -t showcase/out/*/video.webm | head -1) -vf 'fps=12,scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer' ../docs/media/demo.gif"
+  },
+  "dependencies": {
+    "@mantine/core": "^9.6.3",
+    "@mantine/hooks": "^9.6.3",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-http": "^2.6.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "selenium-webdriver": "^4.49.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^5.0.2"
+  },
+  "description": "Remote for Yamaha MusicCast AV receivers (unofficial)",
+  "license": "AGPL-3.0-or-later",
+  "private": true
+}

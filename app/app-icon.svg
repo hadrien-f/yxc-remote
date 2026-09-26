@@ -1,0 +1,10 @@
+<!-- App icon: Lucide "speaker" glyph (ISC license, https://lucide.dev) on a rounded square -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="224" fill="#228be6"/>
+  <g transform="translate(192 192) scale(26.667)" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="16" height="20" x="4" y="2" rx="2"/>
+    <path d="M12 6h.01"/>
+    <circle cx="12" cy="14" r="4"/>
+    <path d="M12 14h.01"/>
+  </g>
+</svg>

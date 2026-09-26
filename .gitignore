@@ -1,0 +1,4 @@
+# test output
+app/test-results/
+app/playwright-report/
+release/

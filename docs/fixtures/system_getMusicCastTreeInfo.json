@@ -1,0 +1,1 @@
+{"response_code":0,"mode":"root_wireless","own_mac_idx":0,"mac_address_list":[{"hop_num":0,"mac_address":"00A0DE000002","ap_status":"none","child_num":0,"ip_address":"192.0.2.10"}],"ap_list":[{"ssid":"my-wifi","key":"","type":"mixed_mode","bssid":"000000000000"}],"hop_num":0}
