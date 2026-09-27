@@ -40,7 +40,8 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     fun cast(invoke: Invoke) {
         val a = invoke.getArgs()
         if (a.getBoolean("on", false))
-            activity.startActivity(Intent(activity, CastActivity::class.java).putExtra("rx", a.getString("rx")))
+            activity.startActivity(Intent(activity, CastActivity::class.java)
+                .putExtra("rx", a.getString("rx")).putExtra("token", a.getString("token")))
         else activity.stopService(Intent(activity, CastService::class.java))
         invoke.resolve()
     }

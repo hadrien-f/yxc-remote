@@ -1,5 +1,6 @@
 // Cast phone audio to the receiver. The Kotlin capture service (Cast.kt) connects to `listen` over loopback,
-// sends "<receiver ip>\n" then raw PCM (s16le, 48 kHz, stereo). We encode it to MP3 320 kbps, serve it over
+// sends "<token> <receiver ip>\n" then raw PCM (s16le, 48 kHz, stereo). The token keeps other apps on the
+// phone from using us to stream anywhere. We encode it to MP3 320 kbps, serve it over
 // HTTP and tell the receiver to play it (DLNA AVTransport). Why MP3 and the ID3 padding: IMPLEMENTATION.md.
 use mp3lame_encoder::{Bitrate, Builder, FlushNoGap, InterleavedPcm, Quality};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -13,13 +14,15 @@ const FRAMES: usize = 1152; // one MP3 frame
 // Fills the receiver's ~90 KB start threshold instantly; decoders skip ID3 tags, so it adds no delay
 const ID3_PADDING: u32 = 120_000;
 
-pub fn serve(listen: &str) -> std::io::Result<()> {
+pub fn serve(listen: &str, token: String, on_error: impl Fn(String) + Send + Sync + 'static) -> std::io::Result<()> {
     let l = TcpListener::bind(listen)?;
+    let on_error = Arc::new(on_error);
     thread::spawn(move || {
         for pcm in l.incoming().flatten() {
+            let (token, on_error) = (token.clone(), on_error.clone());
             thread::spawn(move || {
-                if let Err(e) = cast(pcm) {
-                    eprintln!("cast: {e}");
+                if let Err(e) = cast(pcm, &token) {
+                    on_error(e.to_string());
                 }
             });
         }
@@ -27,13 +30,21 @@ pub fn serve(listen: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// "<token> <receiver ip>" → the receiver ip, if the token matches
+fn parse_hello(line: &str, token: &str) -> std::io::Result<IpAddr> {
+    match line.trim().split_once(' ') {
+        Some((t, ip)) if t == token => ip.parse().map_err(|_| std::io::Error::other("bad receiver ip")),
+        _ => Err(std::io::Error::other("bad token")),
+    }
+}
+
 type Sink = Arc<Mutex<Option<SyncSender<Vec<u8>>>>>;
 
-fn cast(pcm: TcpStream) -> std::io::Result<()> {
+fn cast(pcm: TcpStream, token: &str) -> std::io::Result<()> {
     let mut pcm = BufReader::new(pcm);
-    let mut rx = String::new();
-    pcm.read_line(&mut rx)?;
-    let rx: IpAddr = rx.trim().parse().map_err(|_| std::io::Error::other("bad receiver ip"))?;
+    let mut hello = String::new();
+    pcm.read_line(&mut hello)?;
+    let rx = parse_hello(&hello, token)?;
 
     let http = TcpListener::bind("0.0.0.0:0")?;
     let url = format!("http://{}:{}/cast.mp3", local_ip(rx)?, http.local_addr()?.port());
@@ -42,7 +53,10 @@ fn cast(pcm: TcpStream) -> std::io::Result<()> {
     thread::spawn(move || {
         for c in http.incoming().flatten() {
             let s = s.clone();
-            thread::spawn(move || serve_http(c, s));
+            // only the receiver gets the stream, not anyone else on the LAN
+            if c.peer_addr().is_ok_and(|a| a.ip() == rx) {
+                thread::spawn(move || serve_http(c, s));
+            }
         }
     });
 
@@ -138,6 +152,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hello_needs_the_token() {
+        assert_eq!(parse_hello("abc 192.0.2.10\n", "abc").unwrap(), "192.0.2.10".parse::<IpAddr>().unwrap());
+        assert!(parse_hello("xyz 192.0.2.10\n", "abc").is_err());
+        assert!(parse_hello("192.0.2.10\n", "abc").is_err());
+    }
+
+    #[test]
     fn id3_padding_header() {
         let t = id3_padding(120_000);
         assert_eq!(t.len(), 120_010);
@@ -148,9 +169,9 @@ mod tests {
     #[test]
     #[ignore]
     fn cast_beeps() {
-        serve("127.0.0.1:8770").unwrap();
+        serve("127.0.0.1:8770", "t".into(), |e| panic!("{e}")).unwrap();
         let mut s = TcpStream::connect("127.0.0.1:8770").unwrap();
-        s.write_all(format!("{}\n", std::env::var("YXC_RX").expect("YXC_RX")).as_bytes()).unwrap();
+        s.write_all(format!("t {}\n", std::env::var("YXC_RX").expect("YXC_RX")).as_bytes()).unwrap();
         let t0 = std::time::Instant::now();
         for n in 0..RATE as usize * 20 {
             let v = if n % RATE as usize > RATE as usize / 10 { 0 } else { ((n as f32 * 440.0 * std::f32::consts::TAU / RATE as f32).sin() * 3000.0) as i16 };

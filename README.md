@@ -54,13 +54,14 @@ How it works: [IMPLEMENTATION.md](IMPLEMENTATION.md). What's next: [MILESTONES.m
 
 ## Dependencies
 
-Direct dependencies only. Everything in the full tree (npm, Cargo, Gradle) is under permissive licenses (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0) or MPL-2.0, all compatible with the AGPL.
+Direct dependencies only. Everything in the full tree (npm, Cargo, Gradle) is under permissive licenses (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0), MPL-2.0 or LGPL (LAME), all compatible with the AGPL.
 
 | Dependency | Used for | License |
 |---|---|---|
 | [Tauri](https://tauri.app) 2 (`tauri`, `tauri-build`, `@tauri-apps/api`, `@tauri-apps/cli`) | Desktop and Android shell | Apache-2.0 OR MIT |
 | [tauri-plugin-http](https://github.com/tauri-apps/plugins-workspace) 2.6 (Rust + JS) | Requests to the receiver from Rust, no CORS | Apache-2.0 OR MIT |
 | [serde](https://serde.rs), serde_json | JSON in Rust | MIT OR Apache-2.0 |
+| [LAME](https://lame.sourceforge.io) 3.100, via [mp3lame-encoder](https://github.com/DoumanAsh/mp3lame-encoder) / mp3lame-sys | MP3 encoding when casting phone audio | LGPL-2.0 (LAME), LGPL-3.0 (bindings) |
 | [React](https://react.dev) 19, react-dom | UI | MIT |
 | [Mantine](https://mantine.dev) 9 (`@mantine/core`, `@mantine/hooks`) | UI components | MIT |
 | [AndroidX](https://developer.android.com/jetpack/androidx) media, appcompat, webkit, activity, lifecycle | Android media session, notification, app shell | Apache-2.0 |
@@ -79,6 +80,8 @@ Development only:
 | @types/node, @types/react, @types/react-dom | Type definitions | MIT |
 
 Lucide icons: Copyright (c) Lucide Icons and Contributors, ISC License (https://lucide.dev/license).
+
+This app uses LAME (https://lame.sourceforge.io), statically linked and unmodified. Its source is in the mp3lame-sys crate, and the app can be rebuilt against a modified LAME from this repository.
 
 ## License
 

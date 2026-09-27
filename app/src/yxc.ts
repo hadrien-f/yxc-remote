@@ -70,6 +70,8 @@ export type Playback = "play" | "pause" | "stop" | "previous" | "next";
 const eventsPort = inTauri ? invoke<number>("events_port") : Promise.resolve(0);
 export const pushEnabled = inTauri;
 export const onReceiverEvent = (cb: () => void) => (inTauri ? listen("yxc-event", cb) : Promise.resolve(() => {}));
+// Casting failed on the Rust side (receiver unreachable, …): src-tauri/src/cast.rs
+export const onCastError = (cb: (e: string) => void) => (inTauri ? listen<string>("cast-error", (e) => cb(e.payload)) : Promise.resolve(() => {}));
 
 async function yxc<T>(path: string): Promise<T> {
   const port = await eventsPort;

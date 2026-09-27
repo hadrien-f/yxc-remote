@@ -129,4 +129,7 @@ The receiver is a standard DLNA renderer (UPnP AVTransport on port 49154). Any H
 - In the app: "Phone audio" is the first input (Android 10+). Choosing it shows a short explanation (pick **Entire screen** so the user can switch apps), then `MediaPlugin.cast` starts `CastActivity` (RECORD_AUDIO + capture consent) and `CastService`, which sends PCM over loopback to `src/cast.rs` (LAME MP3 + HTTP + AVTransport).
 - The UI counts it as casting while the receiver is on `server`, playing the "Phone audio" title. When that stops (another input, stop on the receiver), the service is stopped and sends a media pause key, so the phone's player doesn't carry on through the speaker.
 - Tested on Android 15 with VLC and NewPipe; capture keeps working with the phone muted.
+- The loopback port only accepts a random per-start token (Rust → `cast` command → Kotlin → first line), so other apps on the phone can't stream through us. The MP3 is served only to the receiver's IP.
+- Rust errors go to logcat (tag `Cast`, via `__android_log_write`) and to the UI as a "Casting failed" alert.
+- Updating or reinstalling the app kills the capture: Android's consent lasts one session, so the user picks Phone audio again.
 - Bluetooth input is the low-latency alternative (sub-second, any app, lower quality).

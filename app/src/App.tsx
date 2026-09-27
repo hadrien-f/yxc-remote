@@ -3,7 +3,7 @@ import { Alert, Button, Container, Group, Modal, Stack, Text, Title } from "@man
 import { useLocalStorage } from "@mantine/hooks";
 import {
   addFavorite, albumArtUrl, cast, castAvailable, CAST_INPUT, CAST_TITLE, discover, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
-  inTauri, mediaUpdate, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
+  inTauri, mediaUpdate, onCastError, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
 } from "./yxc";
 import { InputsSheet, NowPlaying, PowerButton, QuickRow, ReceiverSheet, StationsSheet, Transport, VolumeSlider } from "./components";
 
@@ -18,6 +18,7 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [play, setPlay] = useState<PlayInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [castError, setCastError] = useState<string | null>(null); // separate: refresh() clears `error`
   const [inputs, setInputs] = useState<Input[]>([]);
   const [favorites, setFavorites] = useState<Item[]>([]);
   const [recents, setRecents] = useState<Item[]>([]);
@@ -114,6 +115,10 @@ export default function App() {
   const casting = status?.input === "server" && current?.track === CAST_TITLE && current.playback === "play";
   const currentInput = casting ? CAST_INPUT.id : status?.input;
   // Another input picked, or stop pressed on the receiver: end the capture too
+  useEffect(() => {
+    const unlisten = onCastError(setCastError);
+    return () => void unlisten.then((f) => f());
+  }, []);
   const wasCasting = useRef(false);
   useEffect(() => {
     if (wasCasting.current && !casting) cast(false, "").catch(() => {});
@@ -179,6 +184,7 @@ export default function App() {
           {status && <PowerButton on={on} onToggle={() => act(() => setPower(!on))} />}
         </Group>
         {error && <Alert color="red" title="Receiver unreachable">{error}</Alert>}
+        {castError && <Alert color="red" title="Casting failed" withCloseButton onClose={() => setCastError(null)}>{castError}</Alert>}
         {status && !on && <Text c="dimmed">Receiver in standby</Text>}
         {!ready && <Text c="dimmed">{scanning ? "Searching for your receiver…" : "No receiver selected"}</Text>}
         {status && on && (
@@ -237,7 +243,7 @@ export default function App() {
                 <Text>
                   Android will ask to share your screen. Choose <b>Entire screen</b> so you can switch apps. Only the sound is sent.
                 </Text>
-                <Button onClick={() => { setSheet(null); act(() => cast(true, receiver!.ip)); }}>Continue</Button>
+                <Button onClick={() => { setSheet(null); setCastError(null); act(() => cast(true, receiver!.ip)); }}>Continue</Button>
               </Stack>
             </Modal>
             <StationsSheet

@@ -1,7 +1,7 @@
 package io.hadrien.yxcremote
 
 // Cast phone audio: captures what other apps play (Android 10+) and streams raw PCM (s16le, 48 kHz, stereo)
-// over loopback to the app's Rust side (src-tauri/src/cast.rs: MP3 + HTTP + DLNA). Started from MediaPlugin.cast.
+// over loopback to the app's Rust side, first line "<token> <receiver ip>" (src-tauri/src/cast.rs: MP3 + HTTP + DLNA). Started from MediaPlugin.cast.
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -35,11 +35,13 @@ private const val TAG = "Cast"
 // Invisible: asks for RECORD_AUDIO, then the system capture consent, then starts CastService
 class CastActivity : Activity() {
     private var rx = ""
+    private var token = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) { finish(); return }
         rx = intent.getStringExtra("rx") ?: run { Log.e(TAG, "missing rx"); finish(); return }
+        token = intent.getStringExtra("token") ?: ""
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
         else askProjection()
@@ -57,7 +59,7 @@ class CastActivity : Activity() {
     override fun onActivityResult(code: Int, result: Int, data: Intent?) {
         if (result == RESULT_OK && data != null)
             startForegroundService(Intent(this, CastService::class.java)
-                .putExtra("rx", rx).putExtra("result", result).putExtra("data", data))
+                .putExtra("rx", rx).putExtra("token", token).putExtra("result", result).putExtra("data", data))
         else Log.e(TAG, "projection consent refused")
         finish()
     }
@@ -86,6 +88,7 @@ class CastService : Service() {
         }, null)
         projection = p
         val rx = intent.getStringExtra("rx")!!
+        val token = intent.getStringExtra("token")!!
 
         val capture = AudioPlaybackCaptureConfiguration.Builder(p)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
@@ -106,7 +109,7 @@ class CastService : Service() {
                     s.connect(InetSocketAddress("127.0.0.1", 8770), 3000)
                     Log.i(TAG, "casting to $rx, recording")
                     val out = s.getOutputStream(); val buf = ByteArray(chunk)
-                    out.write("$rx\n".toByteArray())
+                    out.write("$token $rx\n".toByteArray())
                     rec.startRecording()
                     var sent = 0L; var peak = 0; var t = System.currentTimeMillis()
                     while (running) {

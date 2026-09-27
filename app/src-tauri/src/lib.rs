@@ -113,12 +113,42 @@ async fn media_update(_app: tauri::AppHandle, _state: serde_json::Value) -> Resu
     Ok(())
 }
 
+// Secret the Kotlin capture must present to cast.rs (random per app start)
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+struct CastToken(String);
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn random_token() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    // RandomState is seeded from the OS RNG; two of them give 128 random bits
+    let r = || std::collections::hash_map::RandomState::new().build_hasher().finish();
+    format!("{:016x}{:016x}", r(), r())
+}
+
+/// Error lines to logcat on Android (Rust's stderr goes nowhere there), stderr elsewhere
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn log_error(tag: &str, msg: &str) {
+    #[cfg(target_os = "android")]
+    {
+        extern "C" {
+            fn __android_log_write(prio: i32, tag: *const std::ffi::c_char, text: *const std::ffi::c_char) -> i32;
+        }
+        let c = |s: &str| std::ffi::CString::new(s.replace('\0', "")).unwrap();
+        let (tag, msg) = (c(tag), c(msg));
+        unsafe { __android_log_write(6 /* ERROR */, tag.as_ptr(), msg.as_ptr()) };
+    }
+    #[cfg(not(target_os = "android"))]
+    eprintln!("{tag}: {msg}");
+}
+
 // Starts (consent + capture, Kotlin CastActivity/CastService) or stops casting phone audio; the capture feeds cast.rs
 #[tauri::command]
 #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
 async fn cast(app: tauri::AppHandle, on: bool, rx: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
-    return app.state::<Media>().0.run_mobile_plugin::<()>("cast", serde_json::json!({ "on": on, "rx": rx })).map_err(|e| e.to_string());
+    return app.state::<Media>().0
+        .run_mobile_plugin::<()>("cast", serde_json::json!({ "on": on, "rx": rx, "token": app.state::<CastToken>().0 }))
+        .map_err(|e| e.to_string());
     #[cfg(not(target_os = "android"))]
     Err("casting is Android only".into())
 }
@@ -132,7 +162,14 @@ pub fn run() {
             let port = listen_events(app.handle().clone())?;
             app.manage(EventsPort(port));
             #[cfg(target_os = "android")]
-            cast::serve("127.0.0.1:8770")?; // fed by CastService
+            {
+                let (token, h) = (random_token(), app.handle().clone());
+                cast::serve("127.0.0.1:8770", token.clone(), move |e| {
+                    log_error("Cast", &e);
+                    let _ = h.emit("cast-error", e);
+                })?;
+                app.manage(CastToken(token));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![discover, events_port, media_update, cast])
