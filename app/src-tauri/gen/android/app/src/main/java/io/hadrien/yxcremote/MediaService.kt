@@ -19,12 +19,16 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.media.VolumeProviderCompat
 import androidx.media.app.NotificationCompat.MediaStyle
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 
 // Media notification + lock screen controls + phone volume keys, for a receiver we only remote-control.
 // A remote VolumeProvider is what makes the hardware volume keys drive the receiver instead of the phone.
+// The web UI starts it and pushes settings, but the service keeps the session current by itself (Android's
+// guidance: the session owner updates it): Rust forwards each receiver UDP event to refresh(), and a
+// 5-min refresh renews the event subscription. In the background the webview's timers are throttled.
 class MediaService : Service() {
     data class State(
         val host: String,
@@ -36,6 +40,8 @@ class MediaService : Service() {
         val playing: Boolean,
         val pauseCmd: String?, // YXC command that pauses this source ("pause", or "stop" for net radio); null if none
         val canPlay: Boolean,
+        val name: String, // receiver name: the artist line when the source has none
+        val port: Int, // Rust's UDP events port, sent as X-AppPort so the receiver keeps pushing events
     ) {
         val toggleCmd get() = if (playing) pauseCmd else "play".takeIf { canPlay }
         val canToggle get() = pauseCmd != null || canPlay
@@ -51,6 +57,10 @@ class MediaService : Service() {
 
         @Volatile
         var state: State? = null
+
+        // the running service, for MediaPlugin.refresh (main thread only)
+        var instance: MediaService? = null
+        private const val RENEW_MS = 5 * 60_000L // the receiver drops event subscribers after ~10 min without requests
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -59,6 +69,12 @@ class MediaService : Service() {
     private var volume: VolumeProviderCompat? = null
     private var artUrl = ""
     private var art: Bitmap? = null
+    private val renew = object : Runnable {
+        override fun run() {
+            refresh()
+            main.postDelayed(this, RENEW_MS)
+        }
+    }
 
     override fun onBind(intent: Intent?) = null
 
@@ -83,6 +99,8 @@ class MediaService : Service() {
             })
             isActive = true
         }
+        instance = this
+        main.postDelayed(renew, RENEW_MS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -92,6 +110,8 @@ class MediaService : Service() {
     }
 
     override fun onDestroy() {
+        instance = null
+        main.removeCallbacks(renew)
         session.release()
         io.shutdown()
         super.onDestroy()
@@ -132,6 +152,45 @@ class MediaService : Service() {
             }
         }
     }
+
+    // Same rules as the web UI (App.tsx `media`): netusb play info only when it names the current input
+    fun refresh() {
+        val s = state ?: return
+        io.execute {
+            val r = runCatching {
+                val status = get(s, "main/getStatus")
+                val input = status.getString("input")
+                val play = get(s, "netusb/getPlayInfo").takeIf { it.optString("input") == input }
+                Triple(status, input, play)
+            }.getOrNull() ?: return@execute
+            val (status, _, play) = r
+            main.post {
+                val cur = state ?: return@post
+                if (status.optString("power") != "on") { state = null; render(); return@post }
+                val attr = play?.optInt("attribute") ?: 0
+                val artPath = play?.optString("albumart_url").orEmpty()
+                state = cur.copy(
+                    title = play?.optString("track").orEmpty().ifEmpty { status.optString("input_text") },
+                    artist = play?.optString("artist").orEmpty().ifEmpty { cur.name },
+                    art = if (artPath.isEmpty() || artPath.startsWith("http")) artPath else "http://${cur.host}$artPath",
+                    volume = status.optInt("volume", cur.volume),
+                    playing = play?.optString("playback") == "play",
+                    pauseCmd = if (attr and 4 != 0) "pause" else if (attr and 2 != 0) "stop" else null,
+                    canPlay = attr and 1 != 0,
+                )
+                render()
+            }
+        }
+    }
+
+    private fun get(s: State, path: String): JSONObject =
+        (URL("http://${s.host}/YamahaExtendedControl/v1/$path").openConnection() as HttpURLConnection).run {
+            connectTimeout = 3000
+            readTimeout = 3000
+            setRequestProperty("X-AppName", "MusicCast/1.0(yamaha-app)")
+            setRequestProperty("X-AppPort", s.port.toString())
+            try { JSONObject(inputStream.bufferedReader().readText()) } finally { disconnect() }
+        }
 
     private fun render() {
         val s = state ?: return stopSelf()

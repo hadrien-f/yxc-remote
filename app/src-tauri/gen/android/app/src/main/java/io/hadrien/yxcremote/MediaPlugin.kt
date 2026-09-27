@@ -29,12 +29,21 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
                 playing = a.getBoolean("playing", false),
                 pauseCmd = a.getString("pauseCmd", null),
                 canPlay = a.getBoolean("canPlay", false),
+                name = a.getString("name", "") ?: "",
+                port = a.getInteger("port", 0),
             )
             ContextCompat.startForegroundService(activity, intent.setAction(MediaService.ACTION_UPDATE))
         } else {
             MediaService.state = null
             activity.stopService(intent)
         }
+        invoke.resolve()
+    }
+
+    // Rust forwards every receiver UDP event here, so the notification stays current while the webview sleeps
+    @Command
+    fun refresh(invoke: Invoke) {
+        MediaService.instance?.refresh()
         invoke.resolve()
     }
 

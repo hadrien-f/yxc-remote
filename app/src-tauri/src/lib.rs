@@ -83,6 +83,11 @@ fn listen_events(app: tauri::AppHandle) -> std::io::Result<u16> {
         while let Ok((n, _)) = socket.recv_from(&mut buf) {
             if worth_refresh(&buf[..n]) {
                 let _ = app.emit("yxc-event", ());
+                // the notification can't wait for the webview: it's throttled in the background
+                #[cfg(target_os = "android")]
+                if let Some(m) = app.try_state::<Media>() {
+                    let _ = m.0.run_mobile_plugin::<()>("refresh", ());
+                }
             }
         }
     });
@@ -90,7 +95,8 @@ fn listen_events(app: tauri::AppHandle) -> std::io::Result<u16> {
 }
 
 // Android media notification, lock screen and volume keys: Kotlin MediaPlugin/MediaService in gen/android.
-// The webview pushes what's playing; on desktop this is a no-op.
+// The webview pushes what's playing and the settings; the service also refreshes itself on receiver events
+// (listen_events). On desktop this is a no-op.
 #[cfg(target_os = "android")]
 struct Media(tauri::plugin::PluginHandle<tauri::Wry>);
 

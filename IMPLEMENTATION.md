@@ -92,6 +92,7 @@ Fixtures were recorded from a real HTR-4072; identifiers (MAC, serial, UUIDs, SS
   - **Volume slider:** Android can't put a custom slider in a notification, so the progress bar is repurposed. Duration is 100 s, position is the volume in % of the cap, speed is 0 so it never advances, and seeking sets the volume. Android labels it as a time.
   - **Android 7–12:** the notification's own −/+ and play/pause actions are shown instead.
   - **Commands:** sent straight from Kotlin with fire-and-forget GETs. The UI re-syncs on the next UDP event.
+- **Keeping it current in the background:** the service owns the session, so it refreshes itself (Android's MediaSession guidance), because the webview's timers are throttled in the background. Rust forwards every receiver UDP event (except `play_time` ticks) to `MediaPlugin.refresh`. The service then fetches `getStatus` + `getPlayInfo` and applies the same rules as the UI. Every 5 minutes it also refreshes with `X-AppPort`, so the receiver keeps sending events. The tuner shows only the input name there.
 - **Hardware media keys** (headset, Bluetooth) don't reach the app: Android only routes them to apps that play audio themselves.
 - **Max volume:** a per-device setting (receiver sheet, default 130, i.e. −15.5 dB). It's enforced in `yxc.ts` and in `MediaService` (clamping, and the volume provider's range).
 

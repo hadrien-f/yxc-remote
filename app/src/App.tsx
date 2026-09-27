@@ -71,7 +71,9 @@ export default function App() {
     if (!ready) return;
     try {
       const s = await getStatus();
-      const type = inputs.find((i) => i.id === s.input)?.playInfoType;
+      // the first load can fail (Wi-Fi asleep when the app starts in the background): retry until we have them
+      const list = inputs.length ? inputs : await getInputs().then((l) => (setInputs(l), l));
+      const type = list.find((i) => i.id === s.input)?.playInfoType;
       setStatus(s);
       setPlay(s.power !== "on" ? null : type === "netusb" ? await getPlayInfo() : type === "tuner" ? await getTunerPlayInfo() : null);
       setError(null);
@@ -167,6 +169,7 @@ export default function App() {
     playing: current?.playback === "play",
     pauseCmd: caps.pause ? "pause" : caps.stop ? "stop" : null,
     canPlay: caps.play,
+    name: receiver?.name ?? "",
   });
   useEffect(() => {
     if (status) mediaUpdate(JSON.parse(media)).catch((e) => console.warn("media_update failed", e));

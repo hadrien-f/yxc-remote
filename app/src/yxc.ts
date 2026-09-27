@@ -27,8 +27,10 @@ export type MediaState = {
   playing: boolean;
   pauseCmd: "pause" | "stop" | null;
   canPlay: boolean;
+  name: string; // receiver name (the service's fallback artist line)
 };
-export const mediaUpdate = (state: MediaState) => (inTauri ? invoke("media_update", { state }) : Promise.resolve());
+// port: the service refreshes itself on receiver events and must keep the event subscription alive (X-AppPort)
+export const mediaUpdate = async (state: MediaState) => (inTauri ? invoke("media_update", { state: { ...state, port: await eventsPort } }) : undefined);
 
 // Cast what the device plays to the receiver: Android 10+ audio capture, or PipeWire on Linux (see IMPLEMENTATION.md)
 const android = /Android (\d+)/.exec(navigator.userAgent);
