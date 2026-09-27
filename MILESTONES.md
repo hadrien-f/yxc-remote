@@ -13,4 +13,4 @@
 - **F-Droid release**: signed release build, no proprietary dependencies, reproducible build metadata
 - **Sound settings**: DSP program, tone, subwoofer, dialogue level… driven by `getFeatures`; copy the official app's grouping
 - **Net radio browsing/search** + "play URL" via the receiver's UPnP AVTransport (`:49154`) — same mechanism as "play from device"
-- **Play from device**: phone serves files over HTTP, receiver pulls them (research spike first)
+- **Cast phone audio**: capture what the phone plays, stream it as MP3 to the receiver over DLNA (~1.6 s latency, see IMPLEMENTATION.md). Next: prototype capture on the phone

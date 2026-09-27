@@ -105,3 +105,26 @@ Fixtures were recorded from a real HTR-4072; identifiers (MAC, serial, UUIDs, SS
   ```
   Every update must be signed with the same key. Release builds are shrunk by R8, and `proguard-rules.pro` keeps `MediaPlugin`, which Rust loads by name.
 - Signed-APK certificate SHA-256: `6a992377b10b7ac474eac0184ffc6affd2d7935512e4b00ca4d8f3802c82fe64`
+
+## Casting phone audio (research, not built yet)
+
+The receiver is a standard DLNA renderer (UPnP AVTransport on port 49154). Any HTTP audio URL can be played with `SetAVTransportURI` then `Play`; the input switches to `server` by itself, and `netusb/getPlayInfo` keeps reporting `play_time`. An endless live stream (no `Content-Length`) is accepted.
+
+**Latency depends on the format, not the network.** Measured acoustically (laptop mic, beeps at known send times, ±0.05 s across runs) on an HTR-4072 over Wi-Fi:
+
+| Stream | Starts after Play | Latency |
+|---|---|---|
+| `audio/L16` PCM, 48 or 96 kHz | 13 s | 11 s |
+| WAV (PCM, endless header) | 13 s | 10 s |
+| AAC ADTS 256 kbps | 30 s | 28 s |
+| MP3 128 kbps | 7 s | 5.6 s |
+| MP3 320 kbps | 4 s | 2.45 s |
+| MP3 320 kbps, 120 KB ID3 padding first | 3 s | **1.6 s** |
+
+- PCM gets a time-based buffer (~11 s), MP3 a byte-based one (~90 KB), so a higher MP3 bitrate means lower latency. This is also why net radio (typically 128 kbps) takes ~5 s to start.
+- An ID3v2 tag made of padding fills the start threshold instantly and is skipped by the decoder. What remains is ~1 s fixed plus a small bitrate-dependent part.
+- AAC ADTS at 512 kbps never played.
+- Android's `MediaCodec` encodes AAC but not MP3, so a phone cast needs a bundled MP3 encoder (LAME, LGPL).
+- Planned pipeline: `AudioPlaybackCapture` (Android 10+, consent per session) → MP3 320 kbps → phone HTTP server (ID3 padding first) → `SetAVTransportURI` + `Play`.
+- Spike (branch `spike/cast-capture`): `CastSpike.kt` captures and sends PCM over loopback to `src/cast.rs` (LAME MP3 + HTTP + AVTransport). Tested on Android 15 with VLC and NewPipe; capture keeps working with the phone muted.
+- Bluetooth input is the low-latency alternative (sub-second, any app, lower quality).

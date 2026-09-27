@@ -1,3 +1,6 @@
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // desktop: only its tests use it
+mod cast;
+
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
@@ -118,6 +121,8 @@ pub fn run() {
         .setup(|app| {
             let port = listen_events(app.handle().clone())?;
             app.manage(EventsPort(port));
+            #[cfg(target_os = "android")]
+            cast::serve("127.0.0.1:8770")?; // spike: fed by CastSpikeService
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![discover, events_port, media_update])
