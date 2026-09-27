@@ -34,7 +34,7 @@ export const mediaUpdate = (state: MediaState) => (inTauri ? invoke("media_updat
 const android = /Android (\d+)/.exec(navigator.userAgent);
 // Android asks to share the screen first, unless PROJECT_MEDIA was granted over adb (IMPLEMENTATION.md)
 // ponytail: dev-only demo for `npm run showcase` (?demo-cast): casting in a plain browser, against the fake receiver
-const demoCast = import.meta.env.DEV && new URLSearchParams(location.search).has("demo-cast");
+const demoCast = import.meta.env.DEV && new URLSearchParams(globalThis.location?.search).has("demo-cast"); // no location in unit tests
 export const castConsentNeeded = () => (inTauri ? invoke<boolean>("cast_consent_needed") : Promise.resolve(demoCast));
 export const castAvailable = demoCast || (inTauri && (android ? Number(android[1]) >= 10 : /Linux/.test(navigator.userAgent)));
 // Also the artist the receiver shows while we cast (the title is the device name)
@@ -83,7 +83,8 @@ export const onCastError = (cb: (e: string) => void) => (inTauri ? listen<string
 // true while the receiver plays this device's stream; false once it stops or moves to anything else
 export const onCastState = (cb: (playing: boolean) => void) => {
   if (inTauri) return listen<boolean>("cast-state", (e) => cb(e.payload));
-  const h = (e: Event) => cb((e as CustomEvent<boolean>).detail); // demo-cast
+  if (!demoCast) return Promise.resolve(() => {});
+  const h = (e: Event) => cb((e as CustomEvent<boolean>).detail);
   addEventListener("demo-cast-state", h);
   return Promise.resolve(() => removeEventListener("demo-cast-state", h));
 };
