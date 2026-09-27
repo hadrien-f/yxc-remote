@@ -32,7 +32,7 @@
       "icons/icon.ico"
     ],
     "category": "Music",
-    "shortDescription": "Remote for Yamaha MusicCast AV receivers",
+    "shortDescription": "Remote for Yamaha MusicCast AV receivers, with audio casting",
     "license": "AGPL-3.0-or-later",
     "licenseFile": "../../LICENSE",
     "publisher": "hadrien-f",

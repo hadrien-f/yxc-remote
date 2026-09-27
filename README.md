@@ -1,6 +1,7 @@
 # YXC Remote
 
 A fast, simple remote for Yamaha MusicCast AV receivers, for your phone and your desktop.
+It can also play whatever your phone or computer is playing on the receiver.
 Unofficial, not affiliated with Yamaha. Tested with the HTR-4072.
 
 <p align="center">
@@ -15,6 +16,7 @@ Unofficial, not affiliated with Yamaha. Tested with the HTR-4072.
 
 <sub>Recorded against a simulated receiver (`npm run showcase`); album art is a placeholder.</sub>
 
+- **Cast your phone or computer's sound**: pick "Phone audio" or "Computer audio" as an input and whatever is playing (Spotify, YouTube, VLC…) comes out of the receiver over Wi-Fi, about 2 s behind. Android 10+ and Linux (PipeWire). Apps with copy protection (Netflix…) may stay silent.
 - **Finds your receiver** on the local network automatically
 - **Now playing**: artwork, track, station
 - **Volume** in dB, as on the receiver's display, with an adjustable cap to protect your ears and speakers, plus mute and power
@@ -30,7 +32,7 @@ Get the files from the [latest release](https://github.com/hadrien-f/yxc-remote/
 
 | Platform | File | Install |
 |---|---|---|
-| Android 7.0+ | `yxc-remote_<version>_universal.apk` | Open it on the phone and allow installing from this source. |
+| Android 7.0+ (casting: 10+) | `yxc-remote_<version>_universal.apk` | Open it on the phone and allow installing from this source. |
 | Debian / Ubuntu | `yxc-remote_<version>_amd64.deb` | `sudo apt install ./yxc-remote_<version>_amd64.deb` |
 | Fedora / openSUSE | `yxc-remote-<version>-1.x86_64.rpm` | `sudo dnf install ./yxc-remote-<version>-1.x86_64.rpm` |
 | Any Linux | `yxc-remote_<version>_amd64.AppImage` | `chmod +x` it, then run it. |
@@ -39,6 +41,9 @@ The APK is signed with the key whose certificate SHA-256 fingerprint is
 `6a:99:23:77:b1:0b:7a:c4:74:ea:c0:18:4f:fc:6a:ff:d2:d7:93:55:12:e4:b0:0c:a4:d8:f3:80:2c:82:fe:64`.
 
 The phone or computer must be on the same network as the receiver.
+
+Android asks for permission to share your screen each time you start casting; only the sound is used.
+To skip that prompt, run once from a computer with adb: `adb shell appops set io.hadrien.yxcremote PROJECT_MEDIA allow`.
 
 ## Run it from source
 

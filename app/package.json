@@ -32,7 +32,7 @@
     "vite": "^8.0.16",
     "vitest": "^5.0.2"
   },
-  "description": "Remote for Yamaha MusicCast AV receivers (unofficial)",
+  "description": "Remote for Yamaha MusicCast AV receivers, with phone and computer audio casting (unofficial)",
   "license": "AGPL-3.0-or-later",
   "private": true
 }
