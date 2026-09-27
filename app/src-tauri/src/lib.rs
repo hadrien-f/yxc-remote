@@ -1,4 +1,3 @@
-#[cfg_attr(not(target_os = "android"), allow(dead_code))] // desktop: only its tests use it
 mod cast;
 
 use std::net::UdpSocket;
@@ -141,6 +140,19 @@ fn log_error(tag: &str, msg: &str) {
     eprintln!("{tag}: {msg}");
 }
 
+// Whether Android will show its capture prompt (false once PROJECT_MEDIA was granted over adb; always false off Android)
+#[tauri::command]
+#[cfg_attr(not(target_os = "android"), allow(unused_variables))]
+async fn cast_consent_needed(app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "android")]
+    return app.state::<Media>().0
+        .run_mobile_plugin::<serde_json::Value>("castConsentNeeded", ())
+        .map(|v| v["needed"].as_bool().unwrap_or(true))
+        .map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    Ok(false)
+}
+
 // Starts (consent + capture, Kotlin CastActivity/CastService) or stops casting phone audio; the capture feeds cast.rs
 #[tauri::command]
 #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
@@ -149,8 +161,60 @@ async fn cast(app: tauri::AppHandle, on: bool, rx: String) -> Result<(), String>
     return app.state::<Media>().0
         .run_mobile_plugin::<()>("cast", serde_json::json!({ "on": on, "rx": rx, "token": app.state::<CastToken>().0 }))
         .map_err(|e| e.to_string());
-    #[cfg(not(target_os = "android"))]
-    Err("casting is Android only".into())
+    #[cfg(target_os = "linux")]
+    return cast_linux(app, on, rx);
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    Err("casting isn't available on this platform yet".into())
+}
+
+/// Cast progress to the webview: "cast-state" (true while the receiver plays our stream) and "cast-error"
+fn cast_event(app: &tauri::AppHandle, e: cast::Event) {
+    match e {
+        cast::Event::Playing(p) => drop(app.emit("cast-state", p)),
+        cast::Event::Failed(e) => {
+            log_error("Cast", &e);
+            let _ = app.emit("cast-error", e);
+            let _ = app.emit("cast-state", false);
+        }
+    }
+}
+
+// Linux: PipeWire records what the default output plays (its monitor) as raw PCM on stdout
+#[cfg(target_os = "linux")]
+fn cast_linux(app: tauri::AppHandle, on: bool, rx: String) -> Result<(), String> {
+    use std::process::{Child, Command, Stdio};
+    use std::sync::{Arc, Mutex};
+    type Recorder = Arc<Mutex<Option<Child>>>;
+    static CURRENT: Mutex<Option<Recorder>> = Mutex::new(None);
+    fn stop(r: &Recorder) {
+        if let Some(mut c) = r.lock().unwrap().take() {
+            let _ = c.kill(); // ends the PCM stream, so cast::run stops the receiver
+            let _ = c.wait();
+        }
+    }
+    if let Some(old) = CURRENT.lock().unwrap().take() {
+        stop(&old);
+    }
+    if !on {
+        return Ok(());
+    }
+    let rx = rx.parse().map_err(|_| "bad receiver ip".to_string())?;
+    let mut child = Command::new("pw-record")
+        .args(["-P", "{ stream.capture.sink=true }", "--rate", "48000", "--channels", "2", "--format", "s16", "-"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("pw-record (PipeWire) not available: {e}"))?;
+    let pcm = child.stdout.take().unwrap();
+    let rec: Recorder = Arc::new(Mutex::new(Some(child)));
+    *CURRENT.lock().unwrap() = Some(rec.clone());
+    let name = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default().trim().to_string();
+    std::thread::spawn(move || {
+        if let Err(e) = cast::run(pcm, rx, &name, "Computer audio", &|e| cast_event(&app, e)) {
+            cast_event(&app, cast::Event::Failed(e.to_string()));
+        }
+        stop(&rec); // the receiver left: don't keep recording
+    });
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -164,15 +228,12 @@ pub fn run() {
             #[cfg(target_os = "android")]
             {
                 let (token, h) = (random_token(), app.handle().clone());
-                cast::serve("127.0.0.1:8770", token.clone(), move |e| {
-                    log_error("Cast", &e);
-                    let _ = h.emit("cast-error", e);
-                })?;
+                cast::serve("127.0.0.1:8770", token.clone(), move |e| cast_event(&h, e))?;
                 app.manage(CastToken(token));
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![discover, events_port, media_update, cast])
+        .invoke_handler(tauri::generate_handler![discover, events_port, media_update, cast, cast_consent_needed])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

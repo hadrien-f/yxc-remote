@@ -1,11 +1,13 @@
 package io.hadrien.yxcremote
 
 import android.app.Activity
+import android.app.AppOpsManager
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 
 // Bridge from the webview (via the Rust `media_update` command) to MediaService.
@@ -34,6 +36,15 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
             activity.stopService(intent)
         }
         invoke.resolve()
+    }
+
+    // Android skips its capture prompt when the "project media" app op was granted over adb:
+    //   adb shell appops set io.hadrien.yxcremote PROJECT_MEDIA allow
+    @Command
+    fun castConsentNeeded(invoke: Invoke) {
+        val ops = activity.getSystemService(AppOpsManager::class.java)
+        val mode = ops.unsafeCheckOpNoThrow("android:project_media", android.os.Process.myUid(), activity.packageName)
+        invoke.resolve(JSObject().put("needed", mode != AppOpsManager.MODE_ALLOWED))
     }
 
     @Command

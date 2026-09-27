@@ -30,13 +30,16 @@ export type MediaState = {
 };
 export const mediaUpdate = (state: MediaState) => (inTauri ? invoke("media_update", { state }) : Promise.resolve());
 
-// Cast what the phone plays to the receiver (Android 10+ audio capture, see IMPLEMENTATION.md)
+// Cast what the device plays to the receiver: Android 10+ audio capture, or PipeWire on Linux (see IMPLEMENTATION.md)
 const android = /Android (\d+)/.exec(navigator.userAgent);
-export const castAvailable = inTauri && !!android && Number(android[1]) >= 10;
-export const CAST_TITLE = "Phone audio"; // what the receiver shows while we cast (src-tauri/src/cast.rs)
+// Android asks to share the screen first, unless PROJECT_MEDIA was granted over adb (IMPLEMENTATION.md)
+export const castConsentNeeded = () => (inTauri ? invoke<boolean>("cast_consent_needed") : Promise.resolve(false));
+export const castAvailable = inTauri && (android ? Number(android[1]) >= 10 : /Linux/.test(navigator.userAgent));
+// Also the track title the receiver shows while we cast (the artist is the device name)
+export const CAST_TITLE = android ? "Phone audio" : "Computer audio";
 export const cast = (on: boolean, rx: string) => invoke("cast", { on, rx });
 // Shown as one more input; it isn't a receiver input (the receiver sees it as "server")
-export const CAST_INPUT: Input = { id: "phone_cast", name: "Phone audio", playInfoType: "none" };
+export const CAST_INPUT: Input = { id: "phone_cast", name: CAST_TITLE, playInfoType: "none" };
 
 // Safety cap below the device max so a mis-drag can't blast the room. User-adjustable, per device.
 export const VOLUME_CEILING = 161; // the receiver's own max (0 dB)
@@ -72,6 +75,8 @@ export const pushEnabled = inTauri;
 export const onReceiverEvent = (cb: () => void) => (inTauri ? listen("yxc-event", cb) : Promise.resolve(() => {}));
 // Casting failed on the Rust side (receiver unreachable, …): src-tauri/src/cast.rs
 export const onCastError = (cb: (e: string) => void) => (inTauri ? listen<string>("cast-error", (e) => cb(e.payload)) : Promise.resolve(() => {}));
+// true while the receiver plays this device's stream; false once it stops or moves to anything else
+export const onCastState = (cb: (playing: boolean) => void) => (inTauri ? listen<boolean>("cast-state", (e) => cb(e.payload)) : Promise.resolve(() => {}));
 
 async function yxc<T>(path: string): Promise<T> {
   const port = await eventsPort;

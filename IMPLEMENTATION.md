@@ -126,9 +126,13 @@ The receiver is a standard DLNA renderer (UPnP AVTransport on port 49154). Any H
 - AAC ADTS at 512 kbps never played.
 - Android's `MediaCodec` encodes AAC but not MP3, so a phone cast needs a bundled MP3 encoder (LAME, LGPL).
 - Planned pipeline: `AudioPlaybackCapture` (Android 10+, consent per session) → MP3 320 kbps → phone HTTP server (ID3 padding first) → `SetAVTransportURI` + `Play`.
-- In the app: "Phone audio" is the first input (Android 10+). Choosing it shows a short explanation (pick **Entire screen** so the user can switch apps), then `MediaPlugin.cast` starts `CastActivity` (RECORD_AUDIO + capture consent) and `CastService`, which sends PCM over loopback to `src/cast.rs` (LAME MP3 + HTTP + AVTransport).
-- The UI counts it as casting while the receiver is on `server`, playing the "Phone audio" title. When that stops (another input, stop on the receiver), the service is stopped and sends a media pause key, so the phone's player doesn't carry on through the speaker.
-- Tested on Android 15 with VLC, NewPipe and Spotify; capture keeps working with the phone muted.
+- In the app: "Phone audio" (Android 10+) or "Computer audio" (Linux) is the first input. The capture is platform-specific; `cast::run` (MP3 + HTTP + AVTransport) is shared.
+  - **Android:** choosing it shows a short explanation (pick **Entire screen** so the user can switch apps), then `MediaPlugin.cast` starts `CastActivity` (RECORD_AUDIO + capture consent) and `CastService`, which sends PCM over loopback to `cast::serve`. Tested on Android 15 with VLC, NewPipe and Spotify.
+  - **Linux:** `pw-record -P '{ stream.capture.sink=true }'` records what the default output plays. Measured latency 1.36 s. Works with the output muted.
+- Capture keeps working with the device muted, on both platforms.
+- The receiver shows the device name as the title (phone name from Android settings, hostname on Linux) and "Phone audio"/"Computer audio" as the artist.
+- **Which device is casting:** the receiver can't tell us, but `cast::run` knows whether the receiver is pulling *its* HTTP stream and emits `cast-state`. When the receiver leaves (another input, another device casting), the cast ends within ~3 s without sending Stop, so it doesn't cut the other device off. On Android the service then sends a media pause key, so the phone's player doesn't carry on through the speaker. Phone → laptop hand-off tested.
+- **No prompt every time (adb only):** `adb shell appops set io.hadrien.yxcremote PROJECT_MEDIA allow` makes Android skip its capture prompt (tested on Android 15). The app checks this app op and then skips its explanation too. Apps can't grant it to themselves.
 - The loopback port only accepts a random per-start token (Rust → `cast` command → Kotlin → first line), so other apps on the phone can't stream through us. The MP3 is served only to the receiver's IP.
 - Rust errors go to logcat (tag `Cast`, via `__android_log_write`) and to the UI as a "Casting failed" alert.
 - Updating or reinstalling the app kills the capture: Android's consent lasts one session, so the user picks Phone audio again.

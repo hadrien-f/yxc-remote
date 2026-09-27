@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Container, Group, Modal, Stack, Text, Title } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import {
-  addFavorite, albumArtUrl, cast, castAvailable, CAST_INPUT, CAST_TITLE, discover, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
-  inTauri, mediaUpdate, onCastError, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
+  addFavorite, albumArtUrl, cast, castAvailable, castConsentNeeded, CAST_INPUT, discover, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
+  inTauri, mediaUpdate, onCastError, onCastState, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
 } from "./yxc";
 import { InputsSheet, NowPlaying, PowerButton, QuickRow, ReceiverSheet, StationsSheet, Transport, VolumeSlider } from "./components";
 
@@ -111,19 +111,14 @@ export default function App() {
   // netusb play info can lag behind an input switch: only trust it when it names the current input
   const current = play && play.input === status?.input ? play : null;
   const radio = status?.input === "net_radio";
-  // the receiver keeps showing our title after a cast ends, so only "play" counts
-  const casting = status?.input === "server" && current?.track === CAST_TITLE && current.playback === "play";
+  // Rust knows whether the receiver is pulling *this* device's stream (another device casting looks the same from here)
+  const [casting, setCasting] = useState(false);
   const currentInput = casting ? CAST_INPUT.id : status?.input;
   // Another input picked, or stop pressed on the receiver: end the capture too
   useEffect(() => {
-    const unlisten = onCastError(setCastError);
-    return () => void unlisten.then((f) => f());
+    const unlisten = [onCastError(setCastError), onCastState(setCasting)];
+    return () => unlisten.forEach((u) => u.then((f) => f()));
   }, []);
-  const wasCasting = useRef(false);
-  useEffect(() => {
-    if (wasCasting.current && !casting) cast(false, "").catch(() => {});
-    wasCasting.current = casting;
-  }, [casting]);
   const station = current?.artist ?? ""; // net radio puts the station name in "artist"
 
   // Stations only change when the station does, no need to poll them
@@ -149,8 +144,15 @@ export default function App() {
 
   const allInputs = castAvailable && receiver ? [CAST_INPUT, ...inputs] : inputs; // first: the feature the official app lacks
   const pinnedInputs = allInputs.filter((i) => pinned.includes(i.id));
+  const startCast = () => {
+    setSheet(null);
+    setCastError(null);
+    act(() => cast(true, receiver!.ip));
+  };
   const choose = (id: string) =>
-    id === CAST_INPUT.id ? !casting && setSheet("cast") : act(() => selectInput(id));
+    id !== CAST_INPUT.id
+      ? act(() => selectInput(id))
+      : !casting && castConsentNeeded().then((ask) => (ask ? setSheet("cast") : startCast()), (e) => setCastError(String(e)));
 
   // Mirror the screen into the Android media notification; only push when something changed
   const caps = transportCaps(current?.attribute ?? 0);
@@ -243,7 +245,7 @@ export default function App() {
                 <Text>
                   Android will ask to share your screen. Choose <b>Entire screen</b> so you can switch apps. Only the sound is sent.
                 </Text>
-                <Button onClick={() => { setSheet(null); setCastError(null); act(() => cast(true, receiver!.ip)); }}>Continue</Button>
+                <Button onClick={startCast}>Continue</Button>
               </Stack>
             </Modal>
             <StationsSheet

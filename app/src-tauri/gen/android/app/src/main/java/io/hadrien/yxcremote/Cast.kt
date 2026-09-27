@@ -1,7 +1,7 @@
 package io.hadrien.yxcremote
 
 // Cast phone audio: captures what other apps play (Android 10+) and streams raw PCM (s16le, 48 kHz, stereo)
-// over loopback to the app's Rust side, first line "<token> <receiver ip>" (src-tauri/src/cast.rs: MP3 + HTTP + DLNA). Started from MediaPlugin.cast.
+// over loopback to the app's Rust side, first line "<token> <receiver ip> <device name>" (src-tauri/src/cast.rs: MP3 + HTTP + DLNA). Started from MediaPlugin.cast.
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -22,6 +22,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
@@ -109,7 +110,9 @@ class CastService : Service() {
                     s.connect(InetSocketAddress("127.0.0.1", 8770), 3000)
                     Log.i(TAG, "casting to $rx, recording")
                     val out = s.getOutputStream(); val buf = ByteArray(chunk)
-                    out.write("$token $rx\n".toByteArray())
+                    // the phone's name from Settings > About, shown on the receiver as the artist
+                    val name = Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
+                    out.write("$token $rx $name\n".toByteArray())
                     rec.startRecording()
                     var sent = 0L; var peak = 0; var t = System.currentTimeMillis()
                     while (running) {

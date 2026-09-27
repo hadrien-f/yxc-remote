@@ -8,9 +8,9 @@
 5. UDP push: receiver events trigger a refresh; polling kept at 10 s as a safety net
 6. App icon (Lucide "speaker", ISC)
 7. Android build (minSdk 24) + media controls: phone volume keys, notification/lock-screen slider and play/pause, adjustable max volume
+8. Cast phone/computer audio (Android 10+, Linux/PipeWire): MP3 over DLNA, ~1.4–2 s latency
 
 ## Next
 - **F-Droid release**: signed release build, no proprietary dependencies, reproducible build metadata
 - **Sound settings**: DSP program, tone, subwoofer, dialogue level… driven by `getFeatures`; copy the official app's grouping
 - **Net radio browsing/search** + "play URL" via the receiver's UPnP AVTransport (`:49154`) — same mechanism as "play from device"
-- **Cast phone audio**: capture what the phone plays, stream it as MP3 to the receiver over DLNA (~1.6 s latency, see IMPLEMENTATION.md). Next: prototype capture on the phone
