@@ -64,6 +64,14 @@ async function fakeReceiver(page: Page) {
       default: return json(ok);
     }
   });
+  // the app's dev-only ?demo-cast mode: "casting" makes the receiver play our stream, as the real one does
+  await page.route("**/demo/cast**", (route) => {
+    if (new URL(route.request().url()).searchParams.get("on") === "true") {
+      Object.assign(status, { input: "server", input_text: nameOf("server") });
+      Object.assign(play, { input: "server", track: "Pixel 7", artist: "Phone audio", album: "", albumart_url: "", playback: "play" });
+    }
+    return route.fulfill({ contentType: "application/json", body: "{}" });
+  });
   const svg = (route: import("@playwright/test").Route) =>
     route.fulfill({ contentType: "image/svg+xml", body: art(Number(route.request().url().match(/(\d+)\.svg/)?.[1] ?? 1)) });
   await page.route("**/YamahaRemoteControl/**", svg);
@@ -74,7 +82,7 @@ const beat = (page: Page, ms = 1200) => page.waitForTimeout(ms);
 
 test("showcase", async ({ page }) => {
   await fakeReceiver(page);
-  await page.goto("/");
+  await page.goto("/?demo-cast");
   await expect(page.getByTestId("track")).toContainText("Siraba");
   await beat(page, 1500);
   await page.screenshot({ path: `${MEDIA}/now-playing.png` });
@@ -112,7 +120,7 @@ test("showcase", async ({ page }) => {
   const sheet = page.getByRole("dialog", { name: "Inputs" });
   await beat(page, 800);
   await sheet.getByRole("button", { name: "Edit" }).click();
-  for (const name of ["AUDIO1", "MIBOX4", "NET RADIO"]) {
+  for (const name of ["Phone audio", "AUDIO1", "NET RADIO"]) {
     await sheet.getByRole("button", { name: `Pin ${name}`, exact: true }).click();
     await beat(page, 400);
   }
@@ -127,4 +135,12 @@ test("showcase", async ({ page }) => {
   await beat(page, 1500);
   await page.getByRole("button", { name: "NET RADIO", exact: true }).click();
   await beat(page, 2000);
+
+  // cast the phone's audio: short explanation, then Android's own prompt (not in a browser)
+  await page.getByRole("button", { name: "Phone audio", exact: true }).click();
+  await beat(page);
+  await page.screenshot({ path: `${MEDIA}/cast.png` });
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByTestId("track")).toContainText("Pixel 7");
+  await beat(page, 2500);
 });

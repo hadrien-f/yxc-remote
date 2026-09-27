@@ -33,11 +33,16 @@ export const mediaUpdate = (state: MediaState) => (inTauri ? invoke("media_updat
 // Cast what the device plays to the receiver: Android 10+ audio capture, or PipeWire on Linux (see IMPLEMENTATION.md)
 const android = /Android (\d+)/.exec(navigator.userAgent);
 // Android asks to share the screen first, unless PROJECT_MEDIA was granted over adb (IMPLEMENTATION.md)
-export const castConsentNeeded = () => (inTauri ? invoke<boolean>("cast_consent_needed") : Promise.resolve(false));
-export const castAvailable = inTauri && (android ? Number(android[1]) >= 10 : /Linux/.test(navigator.userAgent));
-// Also the track title the receiver shows while we cast (the artist is the device name)
+// ponytail: dev-only demo for `npm run showcase` (?demo-cast): casting in a plain browser, against the fake receiver
+const demoCast = import.meta.env.DEV && new URLSearchParams(location.search).has("demo-cast");
+export const castConsentNeeded = () => (inTauri ? invoke<boolean>("cast_consent_needed") : Promise.resolve(demoCast));
+export const castAvailable = demoCast || (inTauri && (android ? Number(android[1]) >= 10 : /Linux/.test(navigator.userAgent)));
+// Also the artist the receiver shows while we cast (the title is the device name)
 export const CAST_TITLE = android ? "Phone audio" : "Computer audio";
-export const cast = (on: boolean, rx: string) => invoke("cast", { on, rx });
+export const cast = (on: boolean, rx: string) =>
+  demoCast
+    ? fetch(`/demo/cast?on=${on}`).then(() => void dispatchEvent(new CustomEvent("demo-cast-state", { detail: on })))
+    : invoke("cast", { on, rx });
 // Shown as one more input; it isn't a receiver input (the receiver sees it as "server")
 export const CAST_INPUT: Input = { id: "phone_cast", name: CAST_TITLE, playInfoType: "none" };
 
@@ -76,7 +81,12 @@ export const onReceiverEvent = (cb: () => void) => (inTauri ? listen("yxc-event"
 // Casting failed on the Rust side (receiver unreachable, …): src-tauri/src/cast.rs
 export const onCastError = (cb: (e: string) => void) => (inTauri ? listen<string>("cast-error", (e) => cb(e.payload)) : Promise.resolve(() => {}));
 // true while the receiver plays this device's stream; false once it stops or moves to anything else
-export const onCastState = (cb: (playing: boolean) => void) => (inTauri ? listen<boolean>("cast-state", (e) => cb(e.payload)) : Promise.resolve(() => {}));
+export const onCastState = (cb: (playing: boolean) => void) => {
+  if (inTauri) return listen<boolean>("cast-state", (e) => cb(e.payload));
+  const h = (e: Event) => cb((e as CustomEvent<boolean>).detail); // demo-cast
+  addEventListener("demo-cast-state", h);
+  return Promise.resolve(() => removeEventListener("demo-cast-state", h));
+};
 
 async function yxc<T>(path: string): Promise<T> {
   const port = await eventsPort;

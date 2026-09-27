@@ -142,12 +142,12 @@ export default function App() {
     ...recents.filter((r) => !favorites.some((f) => f.text === r.text)).map((r) => ({ ...r, recall: () => recallRecent(r.num) })),
   ].slice(0, QUICK_STATIONS);
 
-  const allInputs = castAvailable && receiver ? [CAST_INPUT, ...inputs] : inputs; // first: the feature the official app lacks
+  const allInputs = castAvailable && ready ? [CAST_INPUT, ...inputs] : inputs; // first: the feature the official app lacks
   const pinnedInputs = allInputs.filter((i) => pinned.includes(i.id));
   const startCast = () => {
     setSheet(null);
     setCastError(null);
-    act(() => cast(true, receiver!.ip));
+    act(() => cast(true, receiver?.ip ?? "")); // no receiver object in a browser (Vite proxy)
   };
   const choose = (id: string) =>
     id !== CAST_INPUT.id

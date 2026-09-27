@@ -5,13 +5,14 @@ It can also play whatever your phone or computer is playing on the receiver.
 Unofficial, not affiliated with Yamaha. Tested with the HTR-4072.
 
 <p align="center">
-  <img src="docs/media/demo.gif" alt="Demo: volume, mute, one-tap stations, stations list, pinned inputs" width="300">
+  <img src="docs/media/demo.gif" alt="Demo: volume, mute, one-tap stations, stations list, pinned inputs, casting the phone's audio" width="300">
 </p>
 
 <p align="center">
   <img src="docs/media/now-playing.png" alt="Now playing" width="220">
   <img src="docs/media/stations.png" alt="Stations: favorites and recently played" width="220">
   <img src="docs/media/inputs.png" alt="Inputs: pin the ones you use, hide the rest" width="220">
+  <img src="docs/media/cast.png" alt="Cast phone audio: what Android will ask" width="220">
 </p>
 
 <sub>Recorded against a simulated receiver (`npm run showcase`); album art is a placeholder.</sub>
