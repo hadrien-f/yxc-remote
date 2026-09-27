@@ -33,3 +33,9 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# LAME must encode in real time even in dev builds (unoptimized it takes ~half a phone core)
+[profile.dev.package.mp3lame-sys]
+opt-level = 3
+[profile.dev.package.mp3lame-encoder]
+opt-level = 3

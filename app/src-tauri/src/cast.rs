@@ -89,9 +89,10 @@ pub fn run(mut pcm: impl Read, rx: IpAddr, device: &str, kind: &str, on_event: &
     soap(rx, "SetAVTransportURI", &format!("<InstanceID>0</InstanceID><CurrentURI>{url}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>", xml_escape(&didl)))?;
     soap(rx, "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>")?;
 
+    // q=5 ("Good"): half the CPU of q=2, no audible difference at 320 kbps (~0.5% of a laptop core)
     let mut enc = Builder::new().ok_or_else(|| std::io::Error::other("lame init"))?;
     enc.set_num_channels(2).and_then(|_| enc.set_sample_rate(RATE)).and_then(|_| enc.set_brate(Bitrate::Kbps320))
-        .and_then(|_| enc.set_quality(Quality::NearBest)).map_err(|e| std::io::Error::other(format!("{e:?}")))?;
+        .and_then(|_| enc.set_quality(Quality::Good)).map_err(|e| std::io::Error::other(format!("{e:?}")))?;
     let mut enc = enc.build().map_err(|e| std::io::Error::other(format!("{e:?}")))?;
     let mut buf = vec![0u8; FRAMES * 4];
     let mut samples = vec![0i16; FRAMES * 2];
