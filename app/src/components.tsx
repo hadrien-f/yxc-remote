@@ -220,8 +220,8 @@ export function InputsSheet({ opened, onClose, inputs, pinned, hidden, current, 
               description={pinned.includes(i.id) ? "pinned" : undefined}
               active={i.id === current}
               onClick={() => {
-                onSelect(i.id);
                 onClose();
+                onSelect(i.id); // after onClose: it may open another sheet (cast explanation)
               }}
             />
           ),

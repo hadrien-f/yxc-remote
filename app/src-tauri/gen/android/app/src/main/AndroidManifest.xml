@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- Android 14+ requires one of these "prerequisite" permissions for connectedDevice; multicast also fits SSDP -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <!-- cast spike -->
+    <!-- casting phone audio (Cast.kt) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
@@ -38,9 +38,8 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
-        <!-- cast spike: exported only so adb can start it -->
-        <activity android:name=".CastSpikeActivity" android:exported="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-        <service android:name=".CastSpikeService" android:exported="false" android:foregroundServiceType="mediaProjection" />
+        <activity android:name=".CastActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <service android:name=".CastService" android:exported="false" android:foregroundServiceType="mediaProjection" />
 
         <provider
           android:name="androidx.core.content.FileProvider"

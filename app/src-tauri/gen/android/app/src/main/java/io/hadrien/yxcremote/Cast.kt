@@ -1,10 +1,7 @@
 package io.hadrien.yxcremote
 
-// ponytail: throwaway spike (branch spike/cast-capture). Captures what other apps play and streams raw
-// PCM (s16le, 48 kHz, stereo) over loopback to the app's Rust side (src/cast.rs: MP3 + HTTP + DLNA).
-// The app must be open (Rust listens on 127.0.0.1:8770 once it has started). Not for main.
-//   start: adb shell am start -n <pkg>/io.hadrien.yxcremote.CastSpikeActivity --es rx <receiver ip>
-//   stop:  adb shell am start -n <pkg>/io.hadrien.yxcremote.CastSpikeActivity --ez stop true
+// Cast phone audio: captures what other apps play (Android 10+) and streams raw PCM (s16le, 48 kHz, stereo)
+// over loopback to the app's Rust side (src-tauri/src/cast.rs: MP3 + HTTP + DLNA). Started from MediaPlugin.cast.
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -17,6 +14,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.projection.MediaProjection
@@ -25,23 +23,23 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.math.abs
 
-private const val TAG = "CastSpike"
+private const val TAG = "Cast"
 
-class CastSpikeActivity : Activity() {
+// Invisible: asks for RECORD_AUDIO, then the system capture consent, then starts CastService
+class CastActivity : Activity() {
     private var rx = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent.getBooleanExtra("stop", false) || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            stopService(Intent(this, CastSpikeService::class.java)); finish(); return
-        }
-        rx = intent.getStringExtra("rx") ?: run { Log.e(TAG, "missing --es rx <receiver ip>"); finish(); return }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) { finish(); return }
+        rx = intent.getStringExtra("rx") ?: run { Log.e(TAG, "missing rx"); finish(); return }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
         else askProjection()
@@ -55,17 +53,17 @@ class CastSpikeActivity : Activity() {
     private fun askProjection() =
         startActivityForResult(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent(), 2)
 
-    @Deprecated("spike")
+    @Deprecated("startActivityForResult is enough for a one-shot consent")
     override fun onActivityResult(code: Int, result: Int, data: Intent?) {
         if (result == RESULT_OK && data != null)
-            startForegroundService(Intent(this, CastSpikeService::class.java)
+            startForegroundService(Intent(this, CastService::class.java)
                 .putExtra("rx", rx).putExtra("result", result).putExtra("data", data))
         else Log.e(TAG, "projection consent refused")
         finish()
     }
 }
 
-class CastSpikeService : Service() {
+class CastService : Service() {
     @Volatile private var running = false
     private var projection: MediaProjection? = null
 
@@ -75,9 +73,9 @@ class CastSpikeService : Service() {
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || running) return START_NOT_STICKY
         getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(NotificationChannel("cast", "Cast spike", NotificationManager.IMPORTANCE_LOW))
+            .createNotificationChannel(NotificationChannel("cast", "Casting", NotificationManager.IMPORTANCE_LOW))
         val n = NotificationCompat.Builder(this, "cast").setSmallIcon(R.drawable.ic_stat_speaker)
-            .setContentTitle("Casting phone audio (spike)").setOngoing(true).build()
+            .setContentTitle("Casting phone audio").setOngoing(true).build()
         // Android 14+: the mediaProjection foreground service must be running before getMediaProjection()
         ServiceCompat.startForeground(this, 2, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
 
@@ -128,5 +126,12 @@ class CastSpikeService : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() { running = false; projection?.stop() }
+    override fun onDestroy() {
+        running = false
+        projection?.stop()
+        // Casting ended: pause the phone's player instead of letting it blare from the speaker (like unplugging headphones)
+        val am = getSystemService(AudioManager::class.java)
+        for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP))
+            am.dispatchMediaKeyEvent(KeyEvent(action, KeyEvent.KEYCODE_MEDIA_PAUSE))
+    }
 }

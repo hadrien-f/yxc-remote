@@ -126,5 +126,7 @@ The receiver is a standard DLNA renderer (UPnP AVTransport on port 49154). Any H
 - AAC ADTS at 512 kbps never played.
 - Android's `MediaCodec` encodes AAC but not MP3, so a phone cast needs a bundled MP3 encoder (LAME, LGPL).
 - Planned pipeline: `AudioPlaybackCapture` (Android 10+, consent per session) → MP3 320 kbps → phone HTTP server (ID3 padding first) → `SetAVTransportURI` + `Play`.
-- Spike (branch `spike/cast-capture`): `CastSpike.kt` captures and sends PCM over loopback to `src/cast.rs` (LAME MP3 + HTTP + AVTransport). Tested on Android 15 with VLC and NewPipe; capture keeps working with the phone muted.
+- In the app: "Phone audio" is the first input (Android 10+). Choosing it shows a short explanation (pick **Entire screen** so the user can switch apps), then `MediaPlugin.cast` starts `CastActivity` (RECORD_AUDIO + capture consent) and `CastService`, which sends PCM over loopback to `src/cast.rs` (LAME MP3 + HTTP + AVTransport).
+- The UI counts it as casting while the receiver is on `server`, playing the "Phone audio" title. When that stops (another input, stop on the receiver), the service is stopped and sends a media pause key, so the phone's player doesn't carry on through the speaker.
+- Tested on Android 15 with VLC and NewPipe; capture keeps working with the phone muted.
 - Bluetooth input is the low-latency alternative (sub-second, any app, lower quality).

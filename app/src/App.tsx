@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Container, Group, Stack, Text, Title } from "@mantine/core";
+import { Alert, Button, Container, Group, Modal, Stack, Text, Title } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import {
-  addFavorite, albumArtUrl, discover, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
+  addFavorite, albumArtUrl, cast, castAvailable, CAST_INPUT, CAST_TITLE, discover, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
   inTauri, mediaUpdate, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
 } from "./yxc";
 import { InputsSheet, NowPlaying, PowerButton, QuickRow, ReceiverSheet, StationsSheet, Transport, VolumeSlider } from "./components";
@@ -21,7 +21,7 @@ export default function App() {
   const [inputs, setInputs] = useState<Input[]>([]);
   const [favorites, setFavorites] = useState<Item[]>([]);
   const [recents, setRecents] = useState<Item[]>([]);
-  const [sheet, setSheet] = useState<"inputs" | "stations" | "receiver" | null>(null);
+  const [sheet, setSheet] = useState<"inputs" | "stations" | "receiver" | "cast" | null>(null);
   const [receiver, setReceiver] = useLocalStorage<Receiver | null>({
     key: "receiver",
     defaultValue: null,
@@ -110,6 +110,15 @@ export default function App() {
   // netusb play info can lag behind an input switch: only trust it when it names the current input
   const current = play && play.input === status?.input ? play : null;
   const radio = status?.input === "net_radio";
+  // the receiver keeps showing our title after a cast ends, so only "play" counts
+  const casting = status?.input === "server" && current?.track === CAST_TITLE && current.playback === "play";
+  const currentInput = casting ? CAST_INPUT.id : status?.input;
+  // Another input picked, or stop pressed on the receiver: end the capture too
+  const wasCasting = useRef(false);
+  useEffect(() => {
+    if (wasCasting.current && !casting) cast(false, "").catch(() => {});
+    wasCasting.current = casting;
+  }, [casting]);
   const station = current?.artist ?? ""; // net radio puts the station name in "artist"
 
   // Stations only change when the station does, no need to poll them
@@ -133,7 +142,10 @@ export default function App() {
     ...recents.filter((r) => !favorites.some((f) => f.text === r.text)).map((r) => ({ ...r, recall: () => recallRecent(r.num) })),
   ].slice(0, QUICK_STATIONS);
 
-  const pinnedInputs = inputs.filter((i) => pinned.includes(i.id));
+  const allInputs = castAvailable && receiver ? [CAST_INPUT, ...inputs] : inputs; // first: the feature the official app lacks
+  const pinnedInputs = allInputs.filter((i) => pinned.includes(i.id));
+  const choose = (id: string) =>
+    id === CAST_INPUT.id ? !casting && setSheet("cast") : act(() => selectInput(id));
 
   // Mirror the screen into the Android media notification; only push when something changed
   const caps = transportCaps(current?.attribute ?? 0);
@@ -176,8 +188,8 @@ export default function App() {
               items={pinnedInputs.map((i) => ({
                 key: i.id,
                 text: i.name,
-                active: i.id === status.input,
-                onClick: () => act(() => selectInput(i.id)),
+                active: i.id === currentInput,
+                onClick: () => choose(i.id),
               }))}
               more={{ text: "Inputs ▾", onClick: () => setSheet("inputs") }}
             />
@@ -210,14 +222,24 @@ export default function App() {
             <InputsSheet
               opened={sheet === "inputs"}
               onClose={() => setSheet(null)}
-              inputs={inputs}
+              inputs={allInputs}
               pinned={pinned}
               hidden={hidden}
-              current={status.input}
-              onSelect={(id) => act(() => selectInput(id))}
+              current={currentInput ?? ""}
+              onSelect={choose}
               onTogglePin={(id) => setPinned(toggle(id))}
               onToggleHidden={(id) => setHidden(toggle(id))}
             />
+            {/* Before Android's capture prompt: what it is and what to pick */}
+            <Modal opened={sheet === "cast"} onClose={() => setSheet(null)} title="Cast phone audio" centered>
+              <Stack>
+                <Text>Plays your phone's sound on the receiver.</Text>
+                <Text>
+                  Android will ask to share your screen. Choose <b>Entire screen</b> so you can switch apps. Only the sound is sent.
+                </Text>
+                <Button onClick={() => { setSheet(null); act(() => cast(true, receiver!.ip)); }}>Continue</Button>
+              </Stack>
+            </Modal>
             <StationsSheet
               opened={sheet === "stations"}
               onClose={() => setSheet(null)}

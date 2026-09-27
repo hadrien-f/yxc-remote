@@ -1,4 +1,4 @@
-// Cast phone audio to the receiver (spike). The Kotlin capture service connects to `listen` over loopback,
+// Cast phone audio to the receiver. The Kotlin capture service (Cast.kt) connects to `listen` over loopback,
 // sends "<receiver ip>\n" then raw PCM (s16le, 48 kHz, stereo). We encode it to MP3 320 kbps, serve it over
 // HTTP and tell the receiver to play it (DLNA AVTransport). Why MP3 and the ID3 padding: IMPLEMENTATION.md.
 use mp3lame_encoder::{Bitrate, Builder, FlushNoGap, InterleavedPcm, Quality};

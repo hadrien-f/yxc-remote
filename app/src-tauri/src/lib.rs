@@ -113,6 +113,16 @@ async fn media_update(_app: tauri::AppHandle, _state: serde_json::Value) -> Resu
     Ok(())
 }
 
+// Starts (consent + capture, Kotlin CastActivity/CastService) or stops casting phone audio; the capture feeds cast.rs
+#[tauri::command]
+#[cfg_attr(not(target_os = "android"), allow(unused_variables))]
+async fn cast(app: tauri::AppHandle, on: bool, rx: String) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    return app.state::<Media>().0.run_mobile_plugin::<()>("cast", serde_json::json!({ "on": on, "rx": rx })).map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    Err("casting is Android only".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -122,10 +132,10 @@ pub fn run() {
             let port = listen_events(app.handle().clone())?;
             app.manage(EventsPort(port));
             #[cfg(target_os = "android")]
-            cast::serve("127.0.0.1:8770")?; // spike: fed by CastSpikeService
+            cast::serve("127.0.0.1:8770")?; // fed by CastService
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![discover, events_port, media_update])
+        .invoke_handler(tauri::generate_handler![discover, events_port, media_update, cast])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

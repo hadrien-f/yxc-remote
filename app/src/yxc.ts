@@ -30,6 +30,14 @@ export type MediaState = {
 };
 export const mediaUpdate = (state: MediaState) => (inTauri ? invoke("media_update", { state }) : Promise.resolve());
 
+// Cast what the phone plays to the receiver (Android 10+ audio capture, see IMPLEMENTATION.md)
+const android = /Android (\d+)/.exec(navigator.userAgent);
+export const castAvailable = inTauri && !!android && Number(android[1]) >= 10;
+export const CAST_TITLE = "Phone audio"; // what the receiver shows while we cast (src-tauri/src/cast.rs)
+export const cast = (on: boolean, rx: string) => invoke("cast", { on, rx });
+// Shown as one more input; it isn't a receiver input (the receiver sees it as "server")
+export const CAST_INPUT: Input = { id: "phone_cast", name: "Phone audio", playInfoType: "none" };
+
 // Safety cap below the device max so a mis-drag can't blast the room. User-adjustable, per device.
 export const VOLUME_CEILING = 161; // the receiver's own max (0 dB)
 export const DEFAULT_MAX_VOLUME = 130; // -15.5 dB
