@@ -15,6 +15,13 @@ const base = () => (inTauri ? `http://${receiverHost}` : "");
 // SSDP search runs in Rust (src-tauri/src/lib.rs); a browser can't do UDP, dev uses the Vite proxy instead
 export const discover = () => (inTauri ? invoke<Receiver[]>("discover") : Promise.resolve([]));
 
+// Linux: a firewall denying incoming traffic breaks the scan, live updates and casting. rx null = the scan found nothing.
+export type Firewall = { blocked: boolean; tool: "ufw" | "firewalld" | null };
+export const firewallCheck = (rx: string | null) =>
+  inTauri ? invoke<Firewall>("firewall_check", { rx }) : Promise.resolve<Firewall>({ blocked: false, tool: null });
+// Opens the desktop's password prompt; rejects when dismissed
+export const firewallAllow = (rx: string | null) => invoke("firewall_allow", { rx });
+
 // What the Android media notification / lock screen / volume keys mirror (no-op elsewhere)
 export type MediaState = {
   on: boolean;

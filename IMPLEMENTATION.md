@@ -69,6 +69,7 @@ Fixtures were recorded from a real HTR-4072; identifiers (MAC, serial, UUIDs, SS
 - On Wayland, GNOME finds the window icon through a `.desktop` file whose name matches the app ID, which here is the binary name `yxc-remote`. A bundled install (`npm run tauri build`) creates that file.
 - For dev builds, create `~/.local/share/applications/yxc-remote.desktop` with `Icon=<repo>/app/src-tauri/icons/icon.png`.
   - Create it only after the binary exists: GNOME ignores a `.desktop` file whose `Exec` program is missing, and doesn't re-read it later. If the icon stays generic, delete and re-create the file, then restart the app.
+- **Firewall:** the receiver connects back to us (SSDP replies, UDP events, fetching the cast stream). A firewall that denies incoming traffic (ufw on Manjaro) drops all of it; even the SSDP reply is dropped, because it comes from another port than the one we searched. `firewall_check` probes a known receiver with a direct SSDP search; when the scan finds nothing it can only tell whether ufw or firewalld is on. The dialog's Allow runs `ufw allow from <ip>` (or adds the IP to firewalld's trusted zone) through `pkexec`, then checks again. Without a receiver, it allows the local /24.
 - The icon source is `app/app-icon.svg`: the Lucide "speaker" glyph (ISC license). Regenerate all sizes with `npx tauri icon app-icon.svg`.
 
 ## Android

@@ -25,12 +25,14 @@ fn parse_reply(reply: &str, ip: String) -> Option<Receiver> {
     Some(Receiver { ip, model, name })
 }
 
-// SSDP search on the LAN; the webview can't do UDP, so this lives in Rust
-fn search(wait: Duration) -> std::io::Result<Vec<Receiver>> {
+const SSDP: &str = "239.255.255.250:1900";
+
+// SSDP search on the LAN (to SSDP), or of one device (to <ip>:1900); the webview can't do UDP, so this lives in Rust
+fn search(to: &str, wait: Duration) -> std::io::Result<Vec<Receiver>> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     // UDP is lossy: UPnP recommends sending the search more than once
     for _ in 0..2 {
-        socket.send_to(SEARCH, "239.255.255.250:1900")?;
+        socket.send_to(SEARCH, to)?;
     }
     let deadline = Instant::now() + wait;
     let mut found: Vec<Receiver> = Vec::new();
@@ -50,7 +52,7 @@ fn search(wait: Duration) -> std::io::Result<Vec<Receiver>> {
 
 #[tauri::command]
 async fn discover() -> Result<Vec<Receiver>, String> {
-    tauri::async_runtime::spawn_blocking(|| search(Duration::from_secs(2)))
+    tauri::async_runtime::spawn_blocking(|| search(SSDP, Duration::from_secs(2)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -223,6 +225,82 @@ fn cast_linux(app: tauri::AppHandle, on: bool, rx: String) -> Result<(), String>
     Ok(())
 }
 
+// Linux firewall: the receiver talks back to us (SSDP replies, UDP events, fetching the cast stream). A firewall that
+// denies incoming traffic drops all of it, even the SSDP reply, which comes from another port than the one we asked.
+#[derive(serde::Serialize, Debug, PartialEq)]
+struct Firewall {
+    blocked: bool,
+    tool: Option<&'static str>, // what firewall_allow can configure
+}
+
+#[cfg(target_os = "linux")]
+fn ufw_enabled(conf: &str) -> bool {
+    conf.lines().any(|l| l.trim() == "ENABLED=yes")
+}
+
+#[cfg(target_os = "linux")]
+fn firewall_tool() -> Option<&'static str> {
+    if std::fs::read_to_string("/etc/ufw/ufw.conf").is_ok_and(|c| ufw_enabled(&c)) {
+        return Some("ufw");
+    }
+    // env_remove: not the AppImage's bundled libraries for host programs
+    let firewalld = std::process::Command::new("systemctl").args(["is-active", "--quiet", "firewalld"]).env_remove("LD_LIBRARY_PATH").status();
+    firewalld.is_ok_and(|s| s.success()).then_some("firewalld")
+}
+
+/// With `rx`: probe the receiver (no answer to a search of it = blocked). Without (the scan found nothing): an empty LAN
+/// and a blocked one look the same, so blocked = a firewall is on.
+#[tauri::command]
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+async fn firewall_check(rx: Option<String>) -> Result<Firewall, String> {
+    #[cfg(target_os = "linux")]
+    return tauri::async_runtime::spawn_blocking(move || {
+        let tool = firewall_tool();
+        let blocked = match rx {
+            Some(rx) => search(&format!("{rx}:1900"), Duration::from_millis(2500)).map_err(|e| e.to_string())?.is_empty(),
+            None => tool.is_some(),
+        };
+        Ok(Firewall { blocked, tool })
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "linux"))]
+    Ok(Firewall { blocked: false, tool: None })
+}
+
+/// Lets the receiver (or, not found yet, the whole LAN) in, through the desktop's password prompt (pkexec)
+#[tauri::command]
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+async fn firewall_allow(rx: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    return tauri::async_runtime::spawn_blocking(move || {
+        // runs as root: only ever an IP we parsed or a subnet we built, passed as an argument, never spliced into the script
+        let source = match rx {
+            Some(rx) => rx.parse::<std::net::Ipv4Addr>().map_err(|_| "bad receiver ip")?.to_string(),
+            None => match cast::local_ip([239, 255, 255, 250].into()).map_err(|e| e.to_string())? {
+                // ponytail: assumes a /24 home LAN; read the interface's real prefix if that's ever wrong
+                std::net::IpAddr::V4(ip) => format!("{}.{}.{}.0/24", ip.octets()[0], ip.octets()[1], ip.octets()[2]),
+                ip => return Err(format!("no IPv4 LAN address ({ip})")),
+            },
+        };
+        let script = match firewall_tool() {
+            Some("ufw") => r#"ufw allow from "$1""#,
+            Some(_) => r#"firewall-cmd --permanent --zone=trusted --add-source="$1" && firewall-cmd --reload"#,
+            None => return Err("no ufw or firewalld to configure".into()),
+        };
+        let s = std::process::Command::new("pkexec").args(["sh", "-c", script, "sh", &source]).env_remove("LD_LIBRARY_PATH").status();
+        match s.map_err(|e| format!("pkexec: {e}"))?.code() {
+            Some(0) => Ok(()),
+            Some(126 | 127) => Err("Not authorized".into()), // prompt dismissed or wrong password
+            c => Err(format!("The firewall command failed ({c:?})")),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "linux"))]
+    Err("not available on this platform".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -239,7 +317,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![discover, events_port, media_update, cast, cast_consent_needed])
+        .invoke_handler(tauri::generate_handler![discover, events_port, media_update, cast, cast_consent_needed, firewall_check, firewall_allow])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -273,10 +351,25 @@ mod tests {
         assert!(!worth_refresh(b"not json"));
     }
 
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn reads_ufw_state() {
+        assert!(ufw_enabled("# comment\nENABLED=yes\nLOGLEVEL=low\n"));
+        assert!(!ufw_enabled("ENABLED=no\n"));
+    }
+
+    // Probes a receiver: YXC_RX=<ip> cargo test probe_receiver -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn probe_receiver() {
+        let rx = std::env::var("YXC_RX").expect("YXC_RX");
+        println!("{:?}", tauri::async_runtime::block_on(firewall_check(Some(rx))));
+    }
+
     // Hits the real LAN: cargo test -- --ignored
     #[test]
     #[ignore]
     fn finds_receiver_on_lan() {
-        println!("{:?}", search(Duration::from_secs(2)).unwrap());
+        println!("{:?}", search(SSDP, Duration::from_secs(2)).unwrap());
     }
 }

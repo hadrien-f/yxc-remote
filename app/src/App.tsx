@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Container, Group, Modal, Stack, Text, Title } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import {
-  addFavorite, albumArtUrl, cast, castAvailable, castConsentNeeded, CAST_INPUT, discover, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
+  addFavorite, albumArtUrl, cast, castAvailable, castConsentNeeded, CAST_INPUT, discover, Firewall, firewallAllow, firewallCheck, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
   inTauri, mediaUpdate, onCastError, onCastState, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
 } from "./yxc";
 import { InputsSheet, NowPlaying, PowerButton, QuickRow, ReceiverSheet, StationsSheet, Transport, VolumeSlider } from "./components";
@@ -39,7 +39,19 @@ export default function App() {
   const [pinned, setPinned] = useLocalStorage<string[]>({ key: "pinnedInputs", defaultValue: [] });
   const [hidden, setHidden] = useLocalStorage<string[]>({ key: "hiddenInputs", defaultValue: [] });
 
-  // Scan the LAN: one receiver is picked automatically, several open the chooser
+  // Linux firewall blocking the receiver: asked once per session; "Use without" keeps the app degraded
+  const [firewall, setFirewall] = useState<(Firewall & { rx: string | null; error?: string }) | null>(null);
+  const [allowing, setAllowing] = useState(false);
+  const firewallAsked = useRef(false);
+  const checkFirewall = useCallback(async (rx: string | null) => {
+    const f = await firewallCheck(rx).catch(() => null);
+    if (f?.blocked && !firewallAsked.current) {
+      firewallAsked.current = true;
+      setFirewall({ ...f, rx });
+    }
+  }, []);
+
+  // Scan the LAN: one receiver is picked automatically, several open the chooser. Returns how many were found.
   const scan = useCallback(async () => {
     setScanning(true);
     try {
@@ -47,13 +59,27 @@ export default function App() {
       setFound(list);
       if (list.length === 1) setReceiver(list[0]);
       else setSheet("receiver");
+      if (!list.length) checkFirewall(null);
+      return list.length;
     } catch (e) {
       setError(String(e));
       setSheet("receiver");
+      return 0;
     } finally {
       setScanning(false);
     }
-  }, [setReceiver]);
+  }, [setReceiver, checkFirewall]);
+
+  // Then check it worked: probe the receiver again, or scan again when none was found
+  const allowFirewall = async () => {
+    if (!firewall) return;
+    setAllowing(true);
+    const error = await firewallAllow(firewall.rx).then(() => undefined, (e) => String(e));
+    const blocked = firewall.rx ? await firewallCheck(firewall.rx).then((f) => f.blocked, () => true) : !(await scan());
+    setAllowing(false);
+    if (blocked) setFirewall({ ...firewall, error: error ?? "Still blocked: another rule may deny the receiver." });
+    else setFirewall(null);
+  };
 
   // First launch: no saved receiver yet
   useEffect(() => {
@@ -63,6 +89,11 @@ export default function App() {
   useEffect(() => {
     if (ready) getInputs().then(setInputs, (e) => setError(String(e)));
   }, [ready, receiver?.ip]);
+
+  // Receiver reachable: can it reach us back?
+  useEffect(() => {
+    if (status && receiver) checkFirewall(receiver.ip);
+  }, [!!status, receiver?.ip, checkFirewall]);
 
   // Saved receiver unreachable (new IP from DHCP?): rescan once per session
   const rescanned = useRef(false);
@@ -262,6 +293,35 @@ export default function App() {
             />
           </>
         )}
+        <Modal opened={!!firewall} onClose={() => setFirewall(null)} title="The firewall blocks the receiver" centered zIndex={300 /* above the receiver sheet */}>
+          {firewall && (
+            <Stack>
+              <Text>
+                {firewall.rx
+                  ? `This computer's firewall${firewall.tool ? ` (${firewall.tool})` : ""} blocks connections from the receiver.`
+                  : `No receiver found: this computer's firewall (${firewall.tool}) blocks their answers.`}{" "}
+                Without them the app can't find receivers by itself or cast computer audio, and updates every 10 seconds
+                instead of instantly.
+              </Text>
+              <Text c="dimmed" size="sm">
+                {firewall.tool
+                  ? `Allow lets in ${firewall.rx ?? "your local network"} only. Your system will ask for your password.`
+                  : `Allow incoming connections from ${firewall.rx} in your firewall settings.`}
+              </Text>
+              {firewall.error && <Alert color="red">{firewall.error}</Alert>}
+              <Group justify="flex-end">
+                <Button variant="default" onClick={() => setFirewall(null)}>
+                  Use without
+                </Button>
+                {firewall.tool && (
+                  <Button loading={allowing} onClick={allowFirewall}>
+                    Allow
+                  </Button>
+                )}
+              </Group>
+            </Stack>
+          )}
+        </Modal>
         <ReceiverSheet
           opened={sheet === "receiver"}
           onClose={() => setSheet(null)}

@@ -169,7 +169,7 @@ fn id3_padding(size: u32) -> Vec<u8> {
 }
 
 /// The address the receiver can reach us on (no packet is sent).
-fn local_ip(rx: IpAddr) -> std::io::Result<IpAddr> {
+pub(crate) fn local_ip(rx: IpAddr) -> std::io::Result<IpAddr> {
     let s = UdpSocket::bind("0.0.0.0:0")?;
     s.connect((rx, 9))?;
     Ok(s.local_addr()?.ip())
