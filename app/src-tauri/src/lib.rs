@@ -251,15 +251,23 @@ fn firewall_on() -> bool {
     std::fs::read_to_string("/etc/ufw/ufw.conf").is_ok_and(|c| ufw_enabled(&c)) || firewalld_active()
 }
 
-/// What firewall_allow can configure: firewalld when it runs, else ufw when installed. Not gated on ufw.conf, which
-/// may be unreadable or stale while ufw blocks the receiver; a probe already proved something blocks.
+/// What firewall_allow can configure. nftables last: its rules need root to read, so it's a guess once a probe failed.
 #[cfg(target_os = "linux")]
 fn firewall_tool() -> Option<&'static str> {
+    if std::fs::read_to_string("/etc/ufw/ufw.conf").is_ok_and(|c| ufw_enabled(&c)) {
+        return Some("ufw");
+    }
     if firewalld_active() {
         return Some("firewalld");
     }
-    ["/usr/bin/ufw", "/usr/sbin/ufw"].iter().any(|p| std::path::Path::new(p).exists()).then_some("ufw")
+    ["/usr/bin/nft", "/usr/sbin/nft"].iter().any(|p| std::path::Path::new(p).exists()).then_some("nftables")
 }
+
+// Accepts "$1" first in every input base chain: a drop in any chain is final, so a table of our own can't override
+// one. Lasts until the ruleset is reloaded (reboot).
+#[cfg(target_os = "linux")]
+const NFT_ALLOW: &str = r#"nft list ruleset | awk '/^table /{t=$2" "$3} /^\tchain /{c=$2} /hook input/{print t, c}' |
+  { n=0; while read -r fam tab ch; do nft insert rule "$fam" "$tab" "$ch" ip saddr "$1" accept || exit 1; n=1; done; [ $n = 1 ]; }"#;
 
 /// With `rx`: probe the receiver (no answer to a search of it = blocked). Without (the scan found nothing): an empty LAN
 /// and a blocked one look the same, so blocked = a firewall is on.
@@ -298,8 +306,9 @@ async fn firewall_allow(rx: Option<String>) -> Result<(), String> {
         };
         let script = match firewall_tool() {
             Some("ufw") => r#"ufw allow from "$1""#,
+            Some("nftables") => NFT_ALLOW,
             Some(_) => r#"firewall-cmd --permanent --zone=trusted --add-source="$1" && firewall-cmd --reload"#,
-            None => return Err("no ufw or firewalld to configure".into()),
+            None => return Err("no ufw, firewalld or nftables to configure".into()),
         };
         let s = std::process::Command::new("pkexec").args(["sh", "-c", script, "sh", &source]).env_remove("LD_LIBRARY_PATH").status();
         match s.map_err(|e| format!("pkexec: {e}"))?.code() {

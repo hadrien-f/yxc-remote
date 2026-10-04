@@ -16,7 +16,7 @@ const base = () => (inTauri ? `http://${receiverHost}` : "");
 export const discover = () => (inTauri ? invoke<Receiver[]>("discover") : Promise.resolve([]));
 
 // Linux: a firewall denying incoming traffic breaks the scan, live updates and casting. rx null = the scan found nothing.
-export type Firewall = { blocked: boolean; tool: "ufw" | "firewalld" | null };
+export type Firewall = { blocked: boolean; tool: "ufw" | "firewalld" | "nftables" | null };
 export const firewallCheck = (rx: string | null) =>
   inTauri ? invoke<Firewall>("firewall_check", { rx }) : Promise.resolve<Firewall>({ blocked: false, tool: null });
 // Opens the desktop's password prompt; rejects when dismissed
