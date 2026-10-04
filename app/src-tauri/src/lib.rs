@@ -289,20 +289,22 @@ async fn firewall_check(rx: Option<String>) -> Result<Firewall, String> {
     Ok(Firewall { blocked: false, tool: None })
 }
 
-/// Lets the receiver (or, not found yet, the whole LAN) in, through the desktop's password prompt (pkexec)
+/// Lets the local network (the receiver's, when known) in, through the desktop's password prompt (pkexec)
 #[tauri::command]
 #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 async fn firewall_allow(rx: Option<String>) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     return tauri::async_runtime::spawn_blocking(move || {
-        // runs as root: only ever an IP we parsed or a subnet we built, passed as an argument, never spliced into the script
-        let source = match rx {
-            Some(rx) => rx.parse::<std::net::Ipv4Addr>().map_err(|_| "bad receiver ip")?.to_string(),
-            None => match cast::local_ip([239, 255, 255, 250].into()).map_err(|e| e.to_string())? {
-                // ponytail: assumes a /24 home LAN; read the interface's real prefix if that's ever wrong
-                std::net::IpAddr::V4(ip) => format!("{}.{}.{}.0/24", ip.octets()[0], ip.octets()[1], ip.octets()[2]),
-                ip => return Err(format!("no IPv4 LAN address ({ip})")),
-            },
+        // The whole LAN, not just the receiver: the scan must also find others, or this one at a new (DHCP) address.
+        // Runs as root: only ever a subnet we built, passed as an argument, never spliced into the script.
+        let towards: std::net::IpAddr = match rx {
+            Some(rx) => rx.parse().map_err(|_| "bad receiver ip")?,
+            None => [239, 255, 255, 250].into(),
+        };
+        let source = match cast::local_ip(towards).map_err(|e| e.to_string())? {
+            // ponytail: assumes a /24 home LAN; read the interface's real prefix if that's ever wrong
+            std::net::IpAddr::V4(ip) => format!("{}.{}.{}.0/24", ip.octets()[0], ip.octets()[1], ip.octets()[2]),
+            ip => return Err(format!("no IPv4 LAN address ({ip})")),
         };
         let script = match firewall_tool() {
             Some("ufw") => r#"ufw allow from "$1""#,

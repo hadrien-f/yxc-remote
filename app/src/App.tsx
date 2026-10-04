@@ -305,7 +305,7 @@ export default function App() {
               </Text>
               <Text c="dimmed" size="sm">
                 {firewall.tool
-                  ? `Allow lets in ${firewall.rx ?? "your local network"} only${
+                  ? `Allow lets in your local network only${
                       firewall.tool === "nftables" ? ", until you restart the computer (add it to your nftables config to keep it)" : ""
                     }. Your system will ask for your password.`
                   : `Allow incoming connections from ${firewall.rx} in your firewall settings.`}
