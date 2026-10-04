@@ -40,11 +40,15 @@ export default function App() {
   const [hidden, setHidden] = useLocalStorage<string[]>({ key: "hiddenInputs", defaultValue: [] });
 
   // Linux firewall blocking the receiver: asked once per session; "Use without" keeps the app degraded
-  const [firewall, setFirewall] = useState<(Firewall & { rx: string | null; error?: string }) | null>(null);
+  type FirewallState = Firewall & { rx: string | null; error?: string };
+  const [firewall, setFirewall] = useState<FirewallState | null>(null);
+  const [lanAccess, setLanAccess] = useState<FirewallState | "checking" | null>(null); // last check, for the Receiver sheet
   const [allowing, setAllowing] = useState(false);
   const firewallAsked = useRef(false);
   const checkFirewall = useCallback(async (rx: string | null) => {
+    setLanAccess((a) => a ?? "checking");
     const f = await firewallCheck(rx).catch(() => null);
+    setLanAccess(f && { ...f, rx });
     if (f?.blocked && !firewallAsked.current) {
       firewallAsked.current = true;
       setFirewall({ ...f, rx });
@@ -77,6 +81,7 @@ export default function App() {
     const error = await firewallAllow(firewall.rx).then(() => undefined, (e) => String(e));
     const blocked = firewall.rx ? await firewallCheck(firewall.rx).then((f) => f.blocked, () => true) : !(await scan());
     setAllowing(false);
+    setLanAccess({ ...firewall, blocked });
     if (blocked) setFirewall({ ...firewall, error: error ?? "Still blocked: another rule may deny the receiver." });
     else setFirewall(null);
   };
@@ -94,6 +99,11 @@ export default function App() {
   useEffect(() => {
     if (status && receiver) checkFirewall(receiver.ip);
   }, [!!status, receiver?.ip, checkFirewall]);
+
+  // The Receiver sheet shows the current state
+  useEffect(() => {
+    if (sheet === "receiver") checkFirewall(receiver?.ip ?? null);
+  }, [sheet === "receiver"]);
 
   // Saved receiver unreachable (new IP from DHCP?): rescan once per session
   const rescanned = useRef(false);
@@ -332,6 +342,8 @@ export default function App() {
           onScan={scan}
           maxVolume={maxVolume}
           onMaxVolume={setMaxVolumePref}
+          lanAccess={lanAccess === "checking" ? "checking" : lanAccess && (lanAccess.blocked ? "blocked" : "ok")}
+          onLanAccess={() => lanAccess && lanAccess !== "checking" && setFirewall(lanAccess)}
           onChoose={(r) => {
             setReceiver(r);
             setStatus(null);

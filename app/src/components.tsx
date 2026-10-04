@@ -261,7 +261,7 @@ export function StationsSheet({ opened, onClose, favorites, recents, playing, on
 }
 
 // Found receivers, rescan, or type an IP by hand
-export function ReceiverSheet({ opened, onClose, found, scanning, onScan, onChoose, maxVolume, onMaxVolume }: {
+export function ReceiverSheet({ opened, onClose, found, scanning, onScan, onChoose, maxVolume, onMaxVolume, lanAccess, onLanAccess }: {
   opened: boolean;
   onClose: () => void;
   found: Receiver[];
@@ -270,6 +270,8 @@ export function ReceiverSheet({ opened, onClose, found, scanning, onScan, onChoo
   onChoose: (r: Receiver) => void;
   maxVolume: number;
   onMaxVolume: (v: number) => void;
+  lanAccess: "ok" | "blocked" | "checking" | null; // null: not checked (only Linux desktop has a check)
+  onLanAccess: () => void;
 }) {
   const [ip, setIp] = useState("");
   const validIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(ip);
@@ -302,6 +304,18 @@ export function ReceiverSheet({ opened, onClose, found, scanning, onScan, onChoo
         label={(v) => `${volumeToDb(v).toFixed(1)} dB`}
         marks={[{ value: 130, label: "default" }, { value: VOLUME_CEILING, label: "0 dB" }]}
       />
+      {lanAccess && (
+        <>
+          <SectionTitle>Network access</SectionTitle>
+          {lanAccess === "blocked" ? (
+            <SourceRow label="Blocked by the firewall" description="Tap to fix: search, live updates and casting need it" onClick={onLanAccess} />
+          ) : (
+            <Text size="sm" c="dimmed" py="xs">
+              {lanAccess === "ok" ? "No firewall blocks the receiver" : "Checking…"}
+            </Text>
+          )}
+        </>
+      )}
     </Drawer>
   );
 }
