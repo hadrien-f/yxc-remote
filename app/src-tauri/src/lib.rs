@@ -239,13 +239,26 @@ fn ufw_enabled(conf: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn firewall_tool() -> Option<&'static str> {
-    if std::fs::read_to_string("/etc/ufw/ufw.conf").is_ok_and(|c| ufw_enabled(&c)) {
-        return Some("ufw");
-    }
+fn firewalld_active() -> bool {
     // env_remove: not the AppImage's bundled libraries for host programs
-    let firewalld = std::process::Command::new("systemctl").args(["is-active", "--quiet", "firewalld"]).env_remove("LD_LIBRARY_PATH").status();
-    firewalld.is_ok_and(|s| s.success()).then_some("firewalld")
+    let s = std::process::Command::new("systemctl").args(["is-active", "--quiet", "firewalld"]).env_remove("LD_LIBRARY_PATH").status();
+    s.is_ok_and(|s| s.success())
+}
+
+/// A firewall known to be on: the only hint left when the scan found nothing
+#[cfg(target_os = "linux")]
+fn firewall_on() -> bool {
+    std::fs::read_to_string("/etc/ufw/ufw.conf").is_ok_and(|c| ufw_enabled(&c)) || firewalld_active()
+}
+
+/// What firewall_allow can configure: firewalld when it runs, else ufw when installed. Not gated on ufw.conf, which
+/// may be unreadable or stale while ufw blocks the receiver; a probe already proved something blocks.
+#[cfg(target_os = "linux")]
+fn firewall_tool() -> Option<&'static str> {
+    if firewalld_active() {
+        return Some("firewalld");
+    }
+    ["/usr/bin/ufw", "/usr/sbin/ufw"].iter().any(|p| std::path::Path::new(p).exists()).then_some("ufw")
 }
 
 /// With `rx`: probe the receiver (no answer to a search of it = blocked). Without (the scan found nothing): an empty LAN
@@ -258,7 +271,7 @@ async fn firewall_check(rx: Option<String>) -> Result<Firewall, String> {
         let tool = firewall_tool();
         let blocked = match rx {
             Some(rx) => search(&format!("{rx}:1900"), Duration::from_millis(2500)).map_err(|e| e.to_string())?.is_empty(),
-            None => tool.is_some(),
+            None => firewall_on(),
         };
         Ok(Firewall { blocked, tool })
     })
