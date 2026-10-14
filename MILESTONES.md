@@ -14,3 +14,4 @@
 ## Next
 - **F-Droid release**: signed release build, no proprietary dependencies, reproducible build metadata
 - **Sound settings**: DSP program, tone, subwoofer, dialogue level… driven by `getFeatures`; copy the official app's grouping
+- **Identify song** when the station sends no title: opt-in button, ~10 s from the phone's mic (the app never gets the radio audio) to ACRCloud or AudD with the user's own key. Mic permission; F-Droid "non-free network service" unless opt-in. Chromaprint/AcoustID can't match noisy mic audio; Shazam has no public API
