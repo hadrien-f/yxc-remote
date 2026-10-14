@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ActionIcon, Alert, Button, Card, Drawer, Group, Image, NavLink, ScrollArea, Slider, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
+import { ActionIcon, Alert, Button, Card, Drawer, Group, Image, Loader, NavLink, ScrollArea, Slider, Stack, Text, TextInput, Title } from "@mantine/core";
 import {
   albumArtUrl, getMore, Input, isPlayable, Item, List, listBack, listOpen, listTop, Playback, PlayInfo, Receiver, searchStations, transportCaps, VOLUME_CEILING, volumeToDb,
 } from "./yxc";
@@ -42,8 +42,9 @@ export function NowPlaying({ inputText, play, isFavorite, onFavorite, onStations
       </Group>
       {play && (
         <>
-          <Title order={3} data-testid="track">{play.track || "—"}</Title>
-          <Text data-testid="artist">{play.artist}</Text>
+          {/* net radio between titles (or a station that never sends them): the station name alone */}
+          <Title order={3} data-testid="track">{play.track || play.artist || "—"}</Title>
+          {play.track && <Text data-testid="artist">{play.artist}</Text>}
           {play.album && <Text c="dimmed">{play.album}</Text>}
         </>
       )}
@@ -278,6 +279,15 @@ export function BrowseSheet({ opened, onClose, onPlay }: { opened: boolean; onCl
   useEffect(() => {
     if (opened) load(listTop);
   }, [opened]);
+  // Infinite scroll: the next page loads when the spinner under the list scrolls into view
+  const sentinel = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || busy || !list) return;
+    const io = new IntersectionObserver(([e]) => e.isIntersecting && load(() => getMore(list)));
+    io.observe(el);
+    return () => io.disconnect();
+  }, [list, busy]);
   return (
     <Drawer opened={opened} onClose={onClose} position="bottom" size="85%" title="Browse stations" radius="lg">
       <form onSubmit={(e) => (e.preventDefault(), query.trim() && load(() => searchStations(query.trim())))}>
@@ -303,11 +313,7 @@ export function BrowseSheet({ opened, onClose, onPlay }: { opened: boolean; onCl
               onClick={busy ? undefined : () => (isPlayable(item) ? (onPlay(i), onClose()) : load(() => listOpen(i)))}
             />
           ))}
-          {list.items.length < list.total && (
-            <Button fullWidth variant="subtle" mt="xs" loading={busy} onClick={() => load(() => getMore(list))}>
-              More
-            </Button>
-          )}
+          {list.items.length < list.total && <Loader ref={sentinel} size="sm" mx="auto" my="md" display="block" />}
         </>
       )}
       {busy && !list && <Text c="dimmed" size="sm" py="xs">Loading…</Text>}
