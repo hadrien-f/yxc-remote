@@ -100,14 +100,16 @@ export const onCastState = (cb: (playing: boolean) => void) => {
   return Promise.resolve(() => removeEventListener("demo-cast-state", h));
 };
 
-async function yxc<T>(path: string): Promise<T> {
+// body: a JSON POST (the few commands that take one, like setSearchString)
+async function yxc<T>(path: string, body?: object): Promise<T> {
   const port = await eventsPort;
   const headers: Record<string, string> = port ? { "X-AppName": "MusicCast/1.0(yamaha-app)", "X-AppPort": String(port) } : {};
-  const res = await (inTauri ? tauriFetch : fetch)(`${base()}/YamahaExtendedControl/v1/${path}`, { headers });
+  const init = body ? { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) } : { headers };
+  const res = await (inTauri ? tauriFetch : fetch)(`${base()}/YamahaExtendedControl/v1/${path}`, init);
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
-  const body = await res.json();
-  if (body.response_code !== 0) throw new Error(`YXC error ${body.response_code} on ${path}`);
-  return body;
+  const json = await res.json();
+  if (json.response_code !== 0) throw new Error(`YXC error ${json.response_code} on ${path}`);
+  return json;
 }
 
 export const clampVolume = (v: number) => Math.round(Math.min(maxVolume, Math.max(0, v)));
@@ -180,6 +182,45 @@ export async function addFavorite(): Promise<number | null> {
   if (free < 0) return null;
   await yxc(`netusb/storePreset?num=${free + 1}`);
   return free + 1;
+}
+
+// Net radio browser (Airable). The receiver holds one menu cursor that every client shares: we move it, then read it.
+export type ListItem = { text: string; thumbnail: string; attribute: number };
+export type List = { layer: number; name: string; total: number; items: ListItem[] };
+// getListInfo attribute bits: 2 opens a folder, 4 plays, 8 takes a search string
+export const isPlayable = (i: ListItem) => !!(i.attribute & 4);
+const PAGE = 8; // the receiver's max page size; pages must start at a multiple of it
+
+type ListInfo = { menu_layer: number; max_line: number; menu_name: string; list_info: ListItem[] };
+export async function getList(from = 0): Promise<List> {
+  const l = await yxc<ListInfo>(`netusb/getListInfo?input=net_radio&index=${from}&size=${PAGE}&lang=en`);
+  return { layer: l.menu_layer, name: l.menu_name, total: l.max_line, items: l.list_info };
+}
+// The next page appended to `list`
+export const getMore = async (list: List) => {
+  const next = await getList(list.items.length);
+  return { ...next, items: [...list.items, ...next.items] };
+};
+const control = (type: string, index = 0) => yxc(`netusb/setListControl?list_id=main&type=${type}&index=${index}&zone=main`);
+export const listOpen = async (i: number) => (await control("select", i), getList());
+export const listBack = async () => (await control("return"), getList());
+export const listPlay = (i: number) => control("play", i);
+
+// Back to the top menu (Radio, Podcasts): another client may have left the cursor anywhere
+export async function listTop() {
+  let l = await getList();
+  for (let n = 0; l.layer > 0 && n < 10; n++) l = await listBack();
+  return l;
+}
+
+// Radio → Search's row takes the text; the results replace the list
+export async function searchStations(text: string) {
+  const top = await listTop();
+  const radio = await listOpen(Math.max(0, top.items.findIndex((i) => i.text === "Radio")));
+  const index = radio.items.findIndex((i) => i.attribute & 8);
+  if (index < 0) throw new Error("This receiver has no station search");
+  await yxc("netusb/setSearchString", { list_id: "main", string: text, index });
+  return getList();
 }
 
 // YXC spec, getPlayInfo.attribute bits: 0 playable, 1 stop, 2 pause, 3 prev skip, 4 next skip

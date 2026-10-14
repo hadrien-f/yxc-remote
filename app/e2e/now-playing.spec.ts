@@ -12,6 +12,7 @@ const READS: Record<string, string> = {
   "system/getNameText": "system_getNameText",
   "netusb/getRecentInfo": "netusb_getRecentInfo",
   "netusb/getPresetInfo": "netusb_getPresetInfo",
+  "netusb/getListInfo": "netusb_getListInfo_search", // the browser always sees the same list here
 };
 
 // Answers reads from fixtures, records every write command
@@ -69,4 +70,15 @@ test("pin an input, hide another, replay a station", async ({ page }) => {
   await expect.poll(() => sent).toEqual(
     expect.arrayContaining(["main/prepareInputChange?input=audio1", "main/setInput?input=audio1"]),
   );
+});
+
+test("browse net radio and play a station", async ({ page }) => {
+  const sent = await mockReceiver(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Stations ▾" }).click();
+  await page.getByText("Browse and search").click();
+  const sheet = page.getByRole("dialog", { name: "Browse stations" });
+  await sheet.getByText("Rinse UK").click();
+  await expect.poll(() => sent).toContain("netusb/setListControl?list_id=main&type=play&index=4&zone=main");
+  await expect(sheet).toBeHidden();
 });

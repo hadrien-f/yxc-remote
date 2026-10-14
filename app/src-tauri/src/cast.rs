@@ -82,12 +82,7 @@ pub fn run(mut pcm: impl Read, rx: IpAddr, device: &str, kind: &str, on_event: &
         }
     });
 
-    let (title, artist) = (xml_escape(if device.is_empty() { kind } else { device }), xml_escape(kind));
-    let didl = format!(
-        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dc="http://purl.org/dc/elements/1.1/"><item id="1" parentID="0" restricted="1"><dc:title>{title}</dc:title><upnp:artist>{artist}</upnp:artist><upnp:class>object.item.audioItem.musicTrack</upnp:class><res protocolInfo="http-get:*:audio/mpeg:*">{url}</res></item></DIDL-Lite>"#
-    );
-    soap(rx, "SetAVTransportURI", &format!("<InstanceID>0</InstanceID><CurrentURI>{url}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>", xml_escape(&didl)))?;
-    soap(rx, "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>")?;
+    play_url(rx, &url, "audio/mpeg", if device.is_empty() { kind } else { device }, kind)?;
 
     // q=5 ("Good"): half the CPU of q=2, no audible difference at 320 kbps (~0.5% of a laptop core)
     let mut enc = Builder::new().ok_or_else(|| std::io::Error::other("lame init"))?;
@@ -133,6 +128,17 @@ pub fn run(mut pcm: impl Read, rx: IpAddr, device: &str, kind: &str, on_event: &
         soap(rx, "Stop", "<InstanceID>0</InstanceID>")?; // we stopped while it was still ours
     }
     Ok(())
+}
+
+/// Has the receiver play `url` (DLNA AVTransport); it switches to the "server" input by itself.
+/// `mime`: "*" when unknown. The receiver shows `title` as its biggest text.
+pub fn play_url(rx: IpAddr, url: &str, mime: &str, title: &str, artist: &str) -> std::io::Result<()> {
+    let (u, title, artist) = (xml_escape(url), xml_escape(title), xml_escape(artist));
+    let didl = format!(
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dc="http://purl.org/dc/elements/1.1/"><item id="1" parentID="0" restricted="1"><dc:title>{title}</dc:title><upnp:artist>{artist}</upnp:artist><upnp:class>object.item.audioItem.musicTrack</upnp:class><res protocolInfo="http-get:*:{mime}:*">{u}</res></item></DIDL-Lite>"#
+    );
+    soap(rx, "SetAVTransportURI", &format!("<InstanceID>0</InstanceID><CurrentURI>{u}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>", xml_escape(&didl)))?;
+    soap(rx, "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>")
 }
 
 fn serve_http(mut c: TcpStream, sink: Sink) {
@@ -227,6 +233,14 @@ mod tests {
         thread::sleep(Duration::from_secs(40));
         rec.kill().unwrap();
         t.join().unwrap().unwrap();
+    }
+
+    // Plays a stream URL on the real receiver: YXC_RX=<receiver ip> YXC_URL=<url> cargo test play_stream_url -- --ignored
+    #[test]
+    #[ignore]
+    fn play_stream_url() {
+        let rx: IpAddr = std::env::var("YXC_RX").expect("YXC_RX").parse().unwrap();
+        play_url(rx, &std::env::var("YXC_URL").expect("YXC_URL"), &std::env::var("YXC_MIME").unwrap_or("*".into()), "test", "Stream").unwrap();
     }
 
     // Streams 20 s of beeps to the real receiver: YXC_RX=<receiver ip> cargo test cast_beeps -- --ignored

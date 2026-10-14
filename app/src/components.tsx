@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { ActionIcon, Button, Card, Drawer, Group, Image, NavLink, ScrollArea, Slider, Stack, Text, TextInput, Title } from "@mantine/core";
-import { albumArtUrl, Input, Receiver, Item, Playback, PlayInfo, transportCaps, VOLUME_CEILING, volumeToDb } from "./yxc";
+import { useEffect, useState } from "react";
+import { ActionIcon, Alert, Button, Card, Drawer, Group, Image, NavLink, ScrollArea, Slider, Stack, Text, TextInput, Title } from "@mantine/core";
+import {
+  albumArtUrl, getMore, Input, isPlayable, Item, List, listBack, listOpen, listTop, Playback, PlayInfo, Receiver, searchStations, transportCaps, VOLUME_CEILING, volumeToDb,
+} from "./yxc";
 
 export function NowPlaying({ inputText, play, isFavorite, onFavorite, onStations }: {
   inputText: string;
@@ -231,7 +233,7 @@ export function InputsSheet({ opened, onClose, inputs, pinned, hidden, current, 
 }
 
 // Net radio only: favorites (device presets) and recently played stations
-export function StationsSheet({ opened, onClose, favorites, recents, playing, onFavorite, onRecent }: {
+export function StationsSheet({ opened, onClose, favorites, recents, playing, onFavorite, onRecent, onBrowse }: {
   opened: boolean;
   onClose: () => void;
   favorites: Item[];
@@ -239,6 +241,7 @@ export function StationsSheet({ opened, onClose, favorites, recents, playing, on
   playing: string;
   onFavorite: (num: number) => void;
   onRecent: (num: number) => void;
+  onBrowse: () => void;
 }) {
   const pick = (fn: () => void) => {
     fn();
@@ -246,6 +249,7 @@ export function StationsSheet({ opened, onClose, favorites, recents, playing, on
   };
   return (
     <Drawer opened={opened} onClose={onClose} position="bottom" size="85%" title="Stations" radius="lg">
+      <SourceRow label="Browse and search" description="All net radio stations" onClick={onBrowse} right="›" />
       <SectionTitle>Favorites</SectionTitle>
       {favorites.length === 0 && <Text c="dimmed" size="sm" py="xs">No favorites yet: tap ☆ on what's playing</Text>}
       {favorites.map((f) => (
@@ -256,6 +260,57 @@ export function StationsSheet({ opened, onClose, favorites, recents, playing, on
       {recents.slice(0, 8).map((r) => (
         <SourceRow key={`r${r.num}`} label={r.text} art={r.albumart_url} active={r.text === playing} onClick={() => pick(() => onRecent(r.num))} />
       ))}
+    </Drawer>
+  );
+}
+
+// The receiver's net radio menu (Radio, Podcasts…): folders open in place, stations play
+export function BrowseSheet({ opened, onClose, onPlay }: { opened: boolean; onClose: () => void; onPlay: (index: number) => void }) {
+  const [list, setList] = useState<List | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const load = (f: () => Promise<List>) => {
+    setBusy(true);
+    setError(null);
+    f().then(setList, (e) => setError(String(e))).finally(() => setBusy(false));
+  };
+  useEffect(() => {
+    if (opened) load(listTop);
+  }, [opened]);
+  return (
+    <Drawer opened={opened} onClose={onClose} position="bottom" size="85%" title="Browse stations" radius="lg">
+      <form onSubmit={(e) => (e.preventDefault(), query.trim() && load(() => searchStations(query.trim())))}>
+        <TextInput type="search" placeholder="Search stations" aria-label="Search stations" value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
+      </form>
+      {error && <Alert color="red" mt="sm">{error}</Alert>}
+      {list && (
+        <>
+          <Group mt="md" gap="xs">
+            {list.layer > 0 && (
+              <ActionIcon variant="subtle" aria-label="Back" disabled={busy} onClick={() => load(listBack)}>
+                ←
+              </ActionIcon>
+            )}
+            <Text size="xs" c="dimmed" tt="uppercase">{list.name}</Text>
+          </Group>
+          {list.items.map((item, i) => (
+            <SourceRow
+              key={i}
+              label={item.text}
+              art={item.thumbnail || undefined}
+              right={isPlayable(item) ? undefined : "›"}
+              onClick={busy ? undefined : () => (isPlayable(item) ? (onPlay(i), onClose()) : load(() => listOpen(i)))}
+            />
+          ))}
+          {list.items.length < list.total && (
+            <Button fullWidth variant="subtle" mt="xs" loading={busy} onClick={() => load(() => getMore(list))}>
+              More
+            </Button>
+          )}
+        </>
+      )}
+      {busy && !list && <Text c="dimmed" size="sm" py="xs">Loading…</Text>}
     </Drawer>
   );
 }

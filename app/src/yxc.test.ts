@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { addFavorite, albumArtUrl, DEFAULT_MAX_VOLUME, setMaxVolume, getInputs, getRecents, getTunerPlayInfo, selectInput, getPlayInfo, getStatus, setMute, setPlayback, setVolume, transportCaps, volumeToDb } from "./yxc";
+import { addFavorite, albumArtUrl, isPlayable, searchStations, DEFAULT_MAX_VOLUME, setMaxVolume, getInputs, getRecents, getTunerPlayInfo, selectInput, getPlayInfo, getStatus, setMute, setPlayback, setVolume, transportCaps, volumeToDb } from "./yxc";
 
 const fixture = (name: string) =>
   readFileSync(`${import.meta.dirname}/../../docs/fixtures/${name}.json`, "utf8");
@@ -110,4 +110,23 @@ test("addFavorite stores into the first empty slot", async () => {
 test("tuner play info renders frequency when there is no RDS name", async () => {
   mockFetch(fixture("tuner_getPlayInfo"));
   expect(await getTunerPlayInfo()).toMatchObject({ track: "FM 98.30 MHz", attribute: 0 });
+});
+
+// Fake receiver menu cursor, left in the search results by "another client": root → Radio → Search results
+test("searchStations climbs back to the top, opens Radio and searches from its Search row", async () => {
+  const levels = ["root", "radio", "search"].map((l) => fixture(`netusb_getListInfo_${l}`));
+  let layer = 2;
+  const posted: unknown[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes("getListInfo")) return new Response(levels[layer]);
+    if (url.includes("type=return")) layer = Math.max(0, layer - 1);
+    if (url.includes("type=select")) layer++;
+    if (url.includes("setSearchString")) (posted.push(JSON.parse(String(init?.body))), (layer = 2));
+    return new Response('{"response_code":0}');
+  }));
+  const results = await searchStations("rinse france");
+  expect(posted).toEqual([{ list_id: "main", string: "rinse france", index: 1 }]);
+  expect(results.name).toBe("Search");
+  expect(results.items.filter(isPlayable)[0].text).toBe("Rinse France");
+  expect(isPlayable(results.items[0])).toBe(false); // "By Location" is a folder
 });

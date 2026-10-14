@@ -3,9 +3,9 @@ import { Alert, Button, Container, Group, Modal, Stack, Text, Title } from "@man
 import { useLocalStorage } from "@mantine/hooks";
 import {
   addFavorite, albumArtUrl, cast, castAvailable, castConsentNeeded, CAST_INPUT, discover, Firewall, firewallAllow, firewallCheck, getFavorites, getInputs, getPlayInfo, getRecents, getStatus, getTunerPlayInfo, Input, Item, PlayInfo,
-  inTauri, mediaUpdate, onCastError, onCastState, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
+  inTauri, listPlay, mediaUpdate, onCastError, onCastState, onReceiverEvent, pushEnabled, recallFavorite, recallRecent, Receiver, selectInput, setMute, setPlayback, setMaxVolume, setPower, setReceiverHost, setVolume, Status, transportCaps, DEFAULT_MAX_VOLUME,
 } from "./yxc";
-import { InputsSheet, NowPlaying, PowerButton, QuickRow, ReceiverSheet, StationsSheet, Transport, VolumeSlider } from "./components";
+import { BrowseSheet, InputsSheet, NowPlaying, PowerButton, QuickRow, ReceiverSheet, StationsSheet, Transport, VolumeSlider } from "./components";
 
 // With UDP push, polling is only a safety net for lost datagrams; a browser has no UDP, so it polls fast
 const POLL_MS = pushEnabled ? 10_000 : 2000;
@@ -22,7 +22,7 @@ export default function App() {
   const [inputs, setInputs] = useState<Input[]>([]);
   const [favorites, setFavorites] = useState<Item[]>([]);
   const [recents, setRecents] = useState<Item[]>([]);
-  const [sheet, setSheet] = useState<"inputs" | "stations" | "receiver" | "cast" | null>(null);
+  const [sheet, setSheet] = useState<"inputs" | "stations" | "browse" | "receiver" | "cast" | null>(null);
   const [receiver, setReceiver] = useLocalStorage<Receiver | null>({
     key: "receiver",
     defaultValue: null,
@@ -300,7 +300,9 @@ export default function App() {
               playing={station}
               onFavorite={(n) => act(() => recallFavorite(n))}
               onRecent={(n) => act(() => recallRecent(n))}
+              onBrowse={() => setSheet("browse")}
             />
+            <BrowseSheet opened={sheet === "browse"} onClose={() => setSheet(null)} onPlay={(i) => act(() => listPlay(i))} />
           </>
         )}
         <Modal opened={!!firewall} onClose={() => setFirewall(null)} title="The firewall blocks the receiver" centered zIndex={300 /* above the receiver sheet */}>

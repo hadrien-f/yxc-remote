@@ -112,6 +112,8 @@ Fixtures were recorded from a real HTR-4072; identifiers (MAC, serial, UUIDs, SS
 
 The receiver is a standard DLNA renderer (UPnP AVTransport on port 49154). Any HTTP audio URL can be played with `SetAVTransportURI` then `Play`; the input switches to `server` by itself, and `netusb/getPlayInfo` keeps reporting `play_time`. An endless live stream (no `Content-Length`) is accepted.
 
+**Only URLs on the local network play.** An internet stream URL (MP3 or AAC, http or https) is accepted by `SetAVTransportURI` and `Play` (both 200), but the transport goes straight to `STOPPED` and the receiver never fetches it. The same stream relayed through a LAN machine plays. So "play a URL" would mean relaying through the app; dropped (search covers it). To check: `YXC_RX=<ip> YXC_URL=<url> cargo test play_stream_url -- --ignored`.
+
 **Latency depends on the format, not the network.** Measured acoustically (laptop mic, beeps at known send times, ±0.05 s across runs) on an HTR-4072 over Wi-Fi:
 
 | Stream | Starts after Play | Latency |
